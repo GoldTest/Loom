@@ -44,8 +44,21 @@ jobs:
       - name: Create Portable ZIP Package
         shell: pwsh
         run: |
-          # Create a ZIP file containing the standalone GUI, CLI executables, and the project README.
-          Compress-Archive -Path target/release/CliMaster.exe, target/release/climaster.exe, README.md -DestinationPath target/release/CliMaster-portable-x64.zip
+          # Create staging folder structure to avoid Windows case-insensitive naming conflicts
+          New-Item -ItemType Directory -Force -Path target/release/portable
+          New-Item -ItemType Directory -Force -Path target/release/portable/cli
+          
+          # Copy and rename GUI binary to CliMaster.exe
+          Copy-Item -Path target/release/climaster-gui.exe -Destination target/release/portable/CliMaster.exe
+          
+          # Copy CLI binary to cli/climaster.exe
+          Copy-Item -Path target/release/climaster.exe -Destination target/release/portable/cli/climaster.exe
+          
+          # Copy README
+          Copy-Item -Path README.md -Destination target/release/portable/README.md
+          
+          # Compress staging directory contents
+          Compress-Archive -Path target/release/portable/* -DestinationPath target/release/CliMaster-portable-x64.zip
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
