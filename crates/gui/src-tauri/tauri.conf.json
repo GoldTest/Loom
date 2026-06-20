@@ -1,6 +1,6 @@
 {
   "productName": "CliMaster",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "identifier": "com.climaster.app",
   "build": {
     "beforeDevCommand": "npm --prefix frontend run dev",
