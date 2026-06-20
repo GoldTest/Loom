@@ -50,11 +50,11 @@ describe('climaster CLI E2E tests', () => {
   test('test_cli_version_info', async () => {
     const res = await runCli(['--version']);
     expect(res.exitCode).toBe(0);
-    expect(res.stdout).toContain('climaster 0.1.0');
+    expect(res.stdout).toContain('climaster 0.1.1');
 
     const resShort = await runCli(['-v']);
     expect(resShort.exitCode).toBe(0);
-    expect(resShort.stdout).toContain('climaster 0.1.0');
+    expect(resShort.stdout).toContain('climaster 0.1.1');
   });
 
   test('test_cli_list_default_table', async () => {

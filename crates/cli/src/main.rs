@@ -17,7 +17,7 @@ fn print_help() {
 }
 
 fn print_version() {
-    println!("climaster 0.1.0");
+    println!("climaster {}", env!("CARGO_PKG_VERSION"));
 }
 
 fn main() {
