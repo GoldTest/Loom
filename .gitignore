@@ -1,0 +1,35 @@
+# Rust build output
+/target/
+
+# Node dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Tauri distribution & build files
+/crates/gui/dist/
+/crates/gui/src-tauri/target/
+/crates/gui/src-tauri/gen/
+
+# OS/IDE metadata
+.DS_Store
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Local test databases & configurations
+climaster.json
+active_instances.json
+temp_config_*.json
+e2e/temp_config_*.json
+e2e/active_instances.json
+
+# Agent/AI assistant metadata (keep specs/ but ignore temporary logs/workspaces)
+.agents/
+.harnspec/
