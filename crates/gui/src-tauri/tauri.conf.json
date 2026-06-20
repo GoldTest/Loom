@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "identifier": "com.climaster.app",
   "build": {
-    "beforeDevCommand": "npm --prefix ../frontend run dev",
-    "beforeBuildCommand": "npm --prefix ../frontend run build",
+    "beforeDevCommand": "npm --prefix frontend run dev",
+    "beforeBuildCommand": "npm --prefix frontend run build",
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420"
   },
