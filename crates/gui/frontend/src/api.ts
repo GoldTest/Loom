@@ -19,6 +19,9 @@ export const scanDirectory = (path: string): Promise<CliTool[]> =>
 export const deleteCliTool = (cliId: string): Promise<void> =>
   invoke('delete_cli_tool', { cliId });
 
+export const reorderCliTools = (ids: string[]): Promise<void> =>
+  invoke('reorder_cli_tools', { ids });
+
 export const updateCliEnv = (
   cliId: string,
   env: Record<string, string>

@@ -104,7 +104,7 @@ export function TemplateModal({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 580 }} onClick={e => e.stopPropagation()}>
+      <div className="modal" style={{ maxWidth: 580, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <div className="modal-title">{template ? t('temp.modal.editTitle') : t('temp.modal.newTitle')}</div>
           <button className="btn-icon" onClick={onClose}>✕</button>
@@ -135,7 +135,7 @@ export function TemplateModal({
           </button>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
           {/* Double-Bezel nested container holding form fields */}
           <div className="spec-bezel-outer">
             <div className="spec-bezel-inner">
@@ -209,7 +209,7 @@ export function TemplateModal({
                     </div>
                   </div>
 
-                  {/* Global Env vars Checklist */}
+                  {/* Global Env vars — grouped by KEY, mutually exclusive within each group */}
                   <div className="form-group">
                     <label className="form-label" style={{ marginBottom: 4 }}>
                       {t('temp.modal.globalEnvs')}
@@ -221,30 +221,84 @@ export function TemplateModal({
                       <div style={{ fontSize: 12, color: 'var(--text-tertiary)', background: 'var(--bg-elevated)', padding: '10px 12px', borderRadius: 'var(--radius-md)', border: '1px dashed var(--border-subtle)' }}>
                         {t('temp.modal.noGlobalEnvs')}
                       </div>
-                    ) : (
-                      <div className="env-chip-grid">
-                        {globalVars.map(gv => {
-                          const checked = selectedGlobalVarIds.includes(gv.id);
-                          return (
-                            <div
-                              key={gv.id}
-                              className={`env-chip ${checked ? 'active' : ''}`}
-                              onClick={() => {
-                                if (checked) {
-                                  setSelectedGlobalVarIds(p => p.filter(id => id !== gv.id));
-                                } else {
-                                  setSelectedGlobalVarIds(p => [...p, gv.id]);
-                                }
-                              }}
-                              title={`${gv.key}=${gv.value} (${gv.description || ''})`}
-                            >
-                              <span className="env-chip-check">✓</span>
-                              <span>{gv.key}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                    ) : (() => {
+                      // Group by key
+                      const grouped = new Map<string, GlobalEnvVar[]>();
+                      for (const gv of globalVars) {
+                        const arr = grouped.get(gv.key) ?? [];
+                        arr.push(gv);
+                        grouped.set(gv.key, arr);
+                      }
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          {Array.from(grouped.entries()).map(([key, values]) => {
+                            const selectedInGroup = values.find(v => selectedGlobalVarIds.includes(v.id));
+                            return (
+                              <div key={key} style={{
+                                border: '1px solid var(--border-subtle)',
+                                borderRadius: 'var(--radius-md)',
+                                overflow: 'hidden'
+                              }}>
+                                {/* Key label */}
+                                <div style={{
+                                  padding: '5px 10px',
+                                  background: 'var(--bg-elevated)',
+                                  borderBottom: '1px solid var(--border-subtle)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 8
+                                }}>
+                                  <span style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: 'var(--accent-purple)' }}>{key}</span>
+                                  {values.length > 1 && (
+                                    <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{t('env.group.selectOne')}</span>
+                                  )}
+                                  {selectedInGroup && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedGlobalVarIds(p => p.filter(id => id !== selectedInGroup.id))}
+                                      style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--text-tertiary)', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px' }}
+                                    >
+                                      ✕ {t('env.group.clear')}
+                                    </button>
+                                  )}
+                                </div>
+                                {/* Values — single-select within group */}
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 10px' }}>
+                                  {values.map(gv => {
+                                    const checked = selectedGlobalVarIds.includes(gv.id);
+                                    return (
+                                      <div
+                                        key={gv.id}
+                                        className={`env-chip ${checked ? 'active' : ''}`}
+                                        onClick={() => {
+                                          // Deselect all siblings in same key group, then select this one
+                                          setSelectedGlobalVarIds(p => {
+                                            const withoutGroup = p.filter(id => !values.some(v => v.id === id));
+                                            return checked ? withoutGroup : [...withoutGroup, gv.id];
+                                          });
+                                        }}
+                                        title={`${gv.key}=${gv.value}${gv.description ? ' — ' + gv.description : ''}`}
+                                        style={{ maxWidth: 200 }}
+                                      >
+                                        <span className="env-chip-check">✓</span>
+                                        <span style={{ fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                          {gv.value || <em style={{ color: 'var(--text-tertiary)' }}>(empty)</em>}
+                                        </span>
+                                        {gv.description && (
+                                          <span style={{ color: 'var(--text-tertiary)', fontSize: 10, marginLeft: 2 }}>
+                                            · {gv.description}
+                                          </span>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Custom Env vars key-values overrides */}

@@ -257,12 +257,67 @@ fn test_project_reorder() {
         
         // Reorder with a subset, ensuring the omitted one (p3) is appended to the end
         reorder_projects(vec![p1.id.clone(), p2.id.clone()]).unwrap();
-        
+
         let final_list = get_projects().unwrap();
         assert_eq!(final_list.len(), 3);
         assert_eq!(final_list[0].id, p1.id);
         assert_eq!(final_list[1].id, p2.id);
         assert_eq!(final_list[2].id, p3.id);
+    });
+}
+
+#[test]
+fn test_cli_tools_reorder() {
+    run_test_with_temp_config(|config_path| {
+        use super::manager::{get_cli_tools, import_cli_tool, reorder_cli_tools};
+
+        let temp_dir_path = config_path.parent().unwrap();
+        let ext = if cfg!(target_os = "windows") { ".exe" } else { "" };
+        let path1 = temp_dir_path.join(format!("tool1{}", ext));
+        let path2 = temp_dir_path.join(format!("tool2{}", ext));
+        let path3 = temp_dir_path.join(format!("tool3{}", ext));
+
+        std::fs::write(&path1, "").unwrap();
+        std::fs::write(&path2, "").unwrap();
+        std::fs::write(&path3, "").unwrap();
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for p in &[&path1, &path2, &path3] {
+                let mut perms = std::fs::metadata(p).unwrap().permissions();
+                perms.set_mode(0o755);
+                std::fs::set_permissions(p, perms).unwrap();
+            }
+        }
+
+        let t1 = import_cli_tool(path1.to_string_lossy().to_string()).unwrap();
+        let t2 = import_cli_tool(path2.to_string_lossy().to_string()).unwrap();
+        let t3 = import_cli_tool(path3.to_string_lossy().to_string()).unwrap();
+
+        let list = get_cli_tools().unwrap();
+        assert_eq!(list.len(), 3);
+        assert_eq!(list[0].id, t1.id);
+        assert_eq!(list[1].id, t2.id);
+        assert_eq!(list[2].id, t3.id);
+
+        // Reorder to: t2, t3, t1
+        reorder_cli_tools(vec![t2.id.clone(), t3.id.clone(), t1.id.clone()]).unwrap();
+
+        let reordered = get_cli_tools().unwrap();
+        assert_eq!(reordered.len(), 3);
+        assert_eq!(reordered[0].id, t2.id);
+        assert_eq!(reordered[1].id, t3.id);
+        assert_eq!(reordered[2].id, t1.id);
+
+        // Reorder with subset: t1, t2 -> t3 appended at end
+        reorder_cli_tools(vec![t1.id.clone(), t2.id.clone()]).unwrap();
+
+        let final_list = get_cli_tools().unwrap();
+        assert_eq!(final_list.len(), 3);
+        assert_eq!(final_list[0].id, t1.id);
+        assert_eq!(final_list[1].id, t2.id);
+        assert_eq!(final_list[2].id, t3.id);
     });
 }
 

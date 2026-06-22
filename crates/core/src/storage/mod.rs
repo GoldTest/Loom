@@ -12,7 +12,7 @@ pub use manager::{
     get_language, set_language, get_theme, set_theme, StorageManager,
     get_global_env_vars, create_global_env_var, update_global_env_var, delete_global_env_var,
     update_category, smart_classify, get_font_family, set_font_family, get_font_size, set_font_size,
-    get_projects, create_project, delete_project, reorder_projects, get_project_agents, spawn_project_agent, sync_running_processes,
+    get_projects, create_project, delete_project, reorder_projects, reorder_templates, reorder_cli_tools, get_project_agents, spawn_project_agent, sync_running_processes,
     read_agent_logs
 };
 

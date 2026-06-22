@@ -9,13 +9,26 @@ import type { GlobalEnvVar } from '../types';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
 
+// Group flat list by key
+function groupByKey(vars: GlobalEnvVar[]): Map<string, GlobalEnvVar[]> {
+  const map = new Map<string, GlobalEnvVar[]>();
+  for (const v of vars) {
+    const arr = map.get(v.key) ?? [];
+    arr.push(v);
+    map.set(v.key, arr);
+  }
+  return map;
+}
+
 export default function EnvVarsPage() {
   const { t } = useI18n();
   const [envVars, setEnvVars] = useState<GlobalEnvVar[]>([]);
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingVar, setEditingVar] = useState<GlobalEnvVar | null>(null);
-  
+  // When adding a value to an existing key, prefill the key
+  const [prefillKey, setPrefillKey] = useState('');
+
   const [modalKey, setModalKey] = useState('');
   const [modalValue, setModalValue] = useState('');
   const [modalDesc, setModalDesc] = useState('');
@@ -31,38 +44,30 @@ export default function EnvVarsPage() {
     }
   };
 
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
 
-  const handleEditClick = (ev: GlobalEnvVar | null) => {
+  const openNew = (keyPrefill = '') => {
+    setEditingVar(null);
+    setPrefillKey(keyPrefill);
+    setModalKey(keyPrefill);
+    setModalValue('');
+    setModalDesc('');
+    setShowModal(true);
+  };
+
+  const openEdit = (ev: GlobalEnvVar) => {
     setEditingVar(ev);
-    if (ev) {
-      setModalKey(ev.key);
-      setModalValue(ev.value);
-      setModalDesc(ev.description || '');
-    } else {
-      setModalKey('');
-      setModalValue('');
-      setModalDesc('');
-    }
+    setPrefillKey('');
+    setModalKey(ev.key);
+    setModalValue(ev.value);
+    setModalDesc(ev.description || '');
     setShowModal(true);
   };
 
   const handleSave = async () => {
     const key = modalKey.trim();
     const val = modalValue.trim();
-    if (!key) {
-      toast.error(t('env.toast.keyEmpty'));
-      return;
-    }
-    
-    // Check duplicates locally (ignoring self if editing)
-    if (envVars.some(ev => ev.key.toUpperCase() === key.toUpperCase() && (!editingVar || ev.id !== editingVar.id))) {
-      toast.error(t('env.toast.dupKey', { key }));
-      return;
-    }
-
+    if (!key) { toast.error(t('env.toast.keyEmpty')); return; }
     setSaving(true);
     try {
       if (editingVar) {
@@ -80,10 +85,8 @@ export default function EnvVarsPage() {
     }
   };
 
-  const handleDeleteClick = async (id: string) => {
-    if (!confirm(t('temp.confirm.delete', { name: envVars.find(e => e.id === id)?.key ?? '' }))) {
-      return;
-    }
+  const handleDelete = async (id: string, key: string) => {
+    if (!confirm(t('temp.confirm.delete', { name: key }))) return;
     try {
       await deleteGlobalEnvVar(id);
       load();
@@ -93,12 +96,15 @@ export default function EnvVarsPage() {
     }
   };
 
-  const filtered = envVars.filter(ev =>
+  const allVars = envVars.filter(ev =>
     !search ||
     ev.key.toLowerCase().includes(search.toLowerCase()) ||
     ev.value.toLowerCase().includes(search.toLowerCase()) ||
     (ev.description && ev.description.toLowerCase().includes(search.toLowerCase()))
   );
+
+  const grouped = groupByKey(allVars);
+  const groupEntries = Array.from(grouped.entries());
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -107,7 +113,7 @@ export default function EnvVarsPage() {
           <div className="page-title">{t('env.title')}</div>
           <div className="page-subtitle">{t('env.desc')}</div>
         </div>
-        <button className="btn btn-primary" onClick={() => handleEditClick(null)} style={{ fontSize: 12 }}>
+        <button className="btn btn-primary" onClick={() => openNew()} style={{ fontSize: 12 }}>
           <span>＋</span> {t('env.btn.newVar')}
         </button>
       </div>
@@ -124,38 +130,72 @@ export default function EnvVarsPage() {
           />
         </div>
 
-        {filtered.length === 0 ? (
+        {groupEntries.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">📭</div>
             <div className="empty-state-title">{t('env.empty.noVars')}</div>
-            {search && <div className="empty-state-desc">没有找到匹配的环境变量</div>}
+            {search && <div className="empty-state-desc">{t('env.empty.noSearchResult')}</div>}
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {filtered.map((ev, idx) => (
-              <div key={ev.id} className="card-outer" style={{ animationDelay: `${idx * 40}ms` }}>
-                <div
-                  className="card-inner"
-                  style={{
-                    padding: '14px 18px',
-                    display: 'grid',
-                    gridTemplateColumns: '200px 300px 1fr auto',
-                    gap: 16,
-                    alignItems: 'center'
-                  }}
-                >
-                  <div style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 600, color: 'var(--accent-purple)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {ev.key}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {groupEntries.map(([key, values], idx) => (
+              <div key={key} className="card-outer" style={{ animationDelay: `${idx * 40}ms` }}>
+                <div className="card-inner" style={{ padding: '14px 18px' }}>
+                  {/* Key header row */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 700, color: 'var(--accent-purple)' }}>
+                        {key}
+                      </span>
+                      <span style={{
+                        fontSize: 10, padding: '2px 7px',
+                        borderRadius: 99,
+                        background: 'var(--accent-purple-dim)',
+                        color: 'var(--accent-purple)',
+                        fontWeight: 600
+                      }}>
+                        {values.length} {t('env.group.valueCount')}
+                      </span>
+                    </div>
+                    {/* Add another value for this key */}
+                    <button
+                      className="btn btn-ghost"
+                      onClick={() => openNew(key)}
+                      style={{ fontSize: 11, padding: '3px 10px' }}
+                      title={t('env.btn.addValue')}
+                    >
+                      ＋ {t('env.btn.addValue')}
+                    </button>
                   </div>
-                  <div style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {ev.value}
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {ev.description || '-'}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button className="btn-icon" onClick={() => handleEditClick(ev)} style={{ fontSize: 12 }}>📝</button>
-                    <button className="btn-icon" onClick={() => handleDeleteClick(ev.id)} style={{ color: 'var(--accent-red)', fontSize: 12 }}>✕</button>
+
+                  {/* Values list */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {values.map((ev, vi) => (
+                      <div
+                        key={ev.id}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1fr 1fr auto',
+                          gap: 12,
+                          alignItems: 'center',
+                          padding: '8px 10px',
+                          borderRadius: 'var(--radius-sm)',
+                          background: vi % 2 === 0 ? 'var(--bg-elevated)' : 'transparent',
+                          border: '1px solid var(--border-subtle)'
+                        }}
+                      >
+                        <div style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {ev.value || <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>(empty)</span>}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {ev.description || '-'}
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                          <button className="btn-icon" onClick={() => openEdit(ev)} style={{ fontSize: 12 }}>📝</button>
+                          <button className="btn-icon" onClick={() => handleDelete(ev.id, ev.key)} style={{ color: 'var(--accent-red)', fontSize: 12 }}>✕</button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -178,28 +218,35 @@ export default function EnvVarsPage() {
                 <label className="form-label">{t('env.table.key')} *</label>
                 <input
                   className="input"
-                  placeholder="e.g. DATABASE_URL"
+                  placeholder="e.g. MODEL_NAME"
                   value={modalKey}
                   onChange={e => setModalKey(e.target.value)}
                   style={{ fontFamily: 'monospace', fontSize: 12 }}
-                  autoFocus
+                  autoFocus={!prefillKey}
+                  readOnly={!!prefillKey && !editingVar}
                 />
+                {!!prefillKey && !editingVar && (
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
+                    {t('env.modal.keyLocked')}
+                  </div>
+                )}
               </div>
               <div className="form-group">
                 <label className="form-label">{t('env.table.value')}</label>
                 <input
                   className="input"
-                  placeholder="e.g. postgres://localhost/db"
+                  placeholder="e.g. claude-3-opus"
                   value={modalValue}
                   onChange={e => setModalValue(e.target.value)}
                   style={{ fontFamily: 'monospace', fontSize: 12 }}
+                  autoFocus={!!prefillKey}
                 />
               </div>
               <div className="form-group">
                 <label className="form-label">{t('env.table.desc')}</label>
                 <input
                   className="input"
-                  placeholder="e.g. Local development database connection string"
+                  placeholder={t('env.modal.descPlaceholder')}
                   value={modalDesc}
                   onChange={e => setModalDesc(e.target.value)}
                 />

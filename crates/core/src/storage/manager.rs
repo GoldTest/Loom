@@ -184,8 +184,10 @@ pub fn spawn_in_new_terminal(
         let mut use_powershell = false;
 
         if Command::new("pwsh")
+            .arg("-NoProfile")
             .arg("-Command")
             .arg("exit")
+            .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
@@ -193,8 +195,10 @@ pub fn spawn_in_new_terminal(
         {
             use_pwsh = true;
         } else if Command::new("powershell")
+            .arg("-NoProfile")
             .arg("-Command")
             .arg("exit")
+            .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
@@ -1271,8 +1275,8 @@ pub fn create_global_env_var(key: String, value: String, description: String) ->
     if key_trimmed.is_empty() {
         return Err(StorageError::Validation("Environment variable key cannot be empty".to_string()));
     }
-    if config.env_vars.iter().any(|ev| ev.key == key_trimmed) {
-        return Err(StorageError::Validation(format!("Environment variable '{}' already exists", key_trimmed)));
+    if config.env_vars.iter().any(|ev| ev.key == key_trimmed && ev.value == value) {
+        return Err(StorageError::Validation(format!("Environment variable '{}' with value '{}' already exists", key_trimmed, value)));
     }
     let new_var = GlobalEnvVar {
         id: uuid::Uuid::new_v4().to_string(),
@@ -1367,18 +1371,56 @@ pub fn delete_project(id: String) -> Result<()> {
 pub fn reorder_projects(ids: Vec<String>) -> Result<()> {
     let mut config = load_config()?;
     let mut reordered = Vec::with_capacity(config.projects.len());
-    
+
     // First, add matching projects in the requested order
     for id in &ids {
         if let Some(pos) = config.projects.iter().position(|p| &p.id == id) {
             reordered.push(config.projects.remove(pos));
         }
     }
-    
+
     // Add any remaining projects that were not in the ids list (to prevent data loss)
     reordered.append(&mut config.projects);
-    
+
     config.projects = reordered;
+    save_config(&config)?;
+    Ok(())
+}
+
+pub fn reorder_templates(ids: Vec<String>) -> Result<()> {
+    let mut config = load_config()?;
+    let mut reordered = Vec::with_capacity(config.templates.len());
+
+    // First, add matching templates in the requested order
+    for id in &ids {
+        if let Some(pos) = config.templates.iter().position(|t| &t.id == id) {
+            reordered.push(config.templates.remove(pos));
+        }
+    }
+
+    // Add any remaining templates that were not in the ids list (to prevent data loss)
+    reordered.append(&mut config.templates);
+
+    config.templates = reordered;
+    save_config(&config)?;
+    Ok(())
+}
+
+pub fn reorder_cli_tools(ids: Vec<String>) -> Result<()> {
+    let mut config = load_config()?;
+    let mut reordered = Vec::with_capacity(config.cli_tools.len());
+
+    // First, add matching CLI tools in the requested order
+    for id in &ids {
+        if let Some(pos) = config.cli_tools.iter().position(|t| &t.id == id) {
+            reordered.push(config.cli_tools.remove(pos));
+        }
+    }
+
+    // Add any remaining CLI tools that were not in the ids list (to prevent data loss)
+    reordered.append(&mut config.cli_tools);
+
+    config.cli_tools = reordered;
     save_config(&config)?;
     Ok(())
 }

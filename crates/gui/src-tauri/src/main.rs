@@ -45,6 +45,7 @@ use loom_core::storage::{
     create_project as core_create_project,
     delete_project as core_delete_project,
     reorder_projects as core_reorder_projects,
+    reorder_cli_tools as core_reorder_cli_tools,
     get_project_agents as core_get_project_agents,
     spawn_project_agent as core_spawn_project_agent,
     sync_running_processes as core_sync_running_processes,
@@ -250,6 +251,11 @@ fn reorder_projects(ids: Vec<String>) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn reorder_cli_tools(ids: Vec<String>) -> Result<(), String> {
+    core_reorder_cli_tools(ids).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_project_agents(project_id: String) -> Result<Vec<AgentInstance>, String> {
     core_get_project_agents(project_id).map_err(|e| e.to_string())
 }
@@ -293,10 +299,28 @@ mod win_util {
         fn ShowWindow(hwnd: *mut c_void, nCmdShow: i32) -> i32;
         fn IsIconic(hwnd: *mut c_void) -> i32;
         fn IsWindowVisible(hwnd: *mut c_void) -> i32;
+        fn GetWindow(hwnd: *mut c_void, uCmd: u32) -> *mut c_void;
+        fn BringWindowToTop(hwnd: *mut c_void) -> i32;
     }
 
     #[allow(non_snake_case)]
-    unsafe extern "system" fn enum_windows_callback(hwnd: *mut c_void, lParam: isize) -> i32 {
+    unsafe extern "system" fn enum_windows_callback_strict(hwnd: *mut c_void, lParam: isize) -> i32 {
+        let data = &mut *(lParam as *mut EnumData);
+        let mut process_id = 0;
+        GetWindowThreadProcessId(hwnd, &mut process_id);
+        if process_id == data.pid {
+            let has_no_owner = GetWindow(hwnd, 4).is_null(); // GW_OWNER = 4
+            let is_visible_or_iconic = IsWindowVisible(hwnd) != 0 || IsIconic(hwnd) != 0;
+            if has_no_owner && is_visible_or_iconic {
+                data.hwnd = Some(hwnd);
+                return 0; // stop enumeration
+            }
+        }
+        1 // continue enumeration
+    }
+
+    #[allow(non_snake_case)]
+    unsafe extern "system" fn enum_windows_callback_fallback(hwnd: *mut c_void, lParam: isize) -> i32 {
         let data = &mut *(lParam as *mut EnumData);
         let mut process_id = 0;
         GetWindowThreadProcessId(hwnd, &mut process_id);
@@ -317,11 +341,21 @@ mod win_util {
             hwnd: None,
         };
         unsafe {
-            EnumWindows(enum_windows_callback, &mut data as *mut EnumData as isize);
+            // First try strict check to get the main window
+            EnumWindows(enum_windows_callback_strict, &mut data as *mut EnumData as isize);
+            
+            // If not found, try fallback check
+            if data.hwnd.is_none() {
+                EnumWindows(enum_windows_callback_fallback, &mut data as *mut EnumData as isize);
+            }
+
             if let Some(hwnd) = data.hwnd {
                 if IsIconic(hwnd) != 0 {
                     ShowWindow(hwnd, 9); // SW_RESTORE = 9
+                } else {
+                    ShowWindow(hwnd, 5); // SW_SHOW = 5
                 }
+                BringWindowToTop(hwnd);
                 SetForegroundWindow(hwnd);
                 true
             } else {
@@ -743,6 +777,12 @@ fn main() {
     }
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .setup(|app| {
             let _ = core_sync_running_processes();
             let quit_item = MenuItemBuilder::with_id("quit", "Quit / 退出").build(app)?;
@@ -828,6 +868,7 @@ fn main() {
             create_project,
             delete_project,
             reorder_projects,
+            reorder_cli_tools,
             get_project_agents,
             spawn_project_agent,
             get_agent_logs,

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useI18n } from '../I18nContext';
 import { useToast } from '../ToastContext';
-import { 
+import {
   getCliTools,
   deleteCliTool,
   scanPathEnv,
@@ -10,9 +10,11 @@ import {
   getTemplates,
   deleteTemplate,
   updateCliEnv,
-  updateCliArgs
+  updateCliArgs,
+  getGlobalEnvVars,
+  reorderCliTools
 } from '../api';
-import type { CliTool, Category, Template } from '../types';
+import type { CliTool, Category, Template, GlobalEnvVar } from '../types';
 import EnvVarsPage from './EnvVarsPage';
 import { TemplateModal } from './TemplatesPage';
 import { invoke } from '@tauri-apps/api/core';
@@ -49,6 +51,15 @@ export default function SettingsPage({
   const { t, language, setLanguage } = useI18n();
   const toast = useToast();
   const [activeSubTab, setActiveSubTab] = useState<Tab>('general');
+  const [appVersion, setAppVersion] = useState<string>('0.1.5');
+
+  useEffect(() => {
+    import('@tauri-apps/api/app')
+      .then(({ getVersion }) => {
+        getVersion().then(v => setAppVersion(v)).catch(() => {});
+      })
+      .catch(() => {});
+  }, []);
 
   // ─── CLI Tools & Templates Tab States ──────────────────────────
   const [cliTools, setCliTools] = useState<CliTool[]>([]);
@@ -61,6 +72,64 @@ export default function SettingsPage({
   const [editingTemplate, setEditingTemplate] = useState<Template | undefined>();
   const [editingToolConfig, setEditingToolConfig] = useState<CliTool | null>(null);
   const [scanningTools, setScanningTools] = useState(false);
+
+  // Drag and drop states for CLI tools
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  const isFilterActive = !!toolsSearch || !!toolsFilterCat;
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    if (isFilterActive) return;
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', index.toString());
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    if (isFilterActive) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (draggedIndex === index) return;
+    if (dragOverIndex !== index) {
+      setDragOverIndex(index);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverIndex(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetIndex: number) => {
+    if (isFilterActive) return;
+    e.preventDefault();
+    setDragOverIndex(null);
+    if (draggedIndex === null || draggedIndex === targetIndex) {
+      setDraggedIndex(null);
+      return;
+    }
+
+    const updated = [...cliTools];
+    const item = updated[draggedIndex];
+    updated.splice(draggedIndex, 1);
+    updated.splice(targetIndex, 0, item);
+
+    setCliTools(updated);
+    setDraggedIndex(null);
+
+    try {
+      const ids = updated.map(t => t.id);
+      await reorderCliTools(ids);
+    } catch (err) {
+      toast.error('Failed to save tools order');
+      await loadToolsAndTemplates();
+    }
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
 
   // Fetch categories
   const loadCategories = useCallback(async () => {
@@ -216,7 +285,7 @@ export default function SettingsPage({
 
       {/* ── Sub Tabs Navigation ────────────────────────────────── */}
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '1px', gap: '8px' }}>
-        <button 
+        <button
           onClick={() => setActiveSubTab('general')}
           style={{
             padding: '8px 16px',
@@ -229,9 +298,9 @@ export default function SettingsPage({
             cursor: 'pointer'
           }}
         >
-          ⚙️ {t('settings.title') || 'General Settings'}
+          ⚙️ {t('settings.tab.appearance')}
         </button>
-        <button 
+        <button
           onClick={() => setActiveSubTab('tools')}
           style={{
             padding: '8px 16px',
@@ -244,9 +313,9 @@ export default function SettingsPage({
             cursor: 'pointer'
           }}
         >
-          🛠️ {t('workspace.tab.tools') || 'Tools & Templates'}
+          🛠️ {t('settings.tab.tools')}
         </button>
-        <button 
+        <button
           onClick={() => setActiveSubTab('env')}
           style={{
             padding: '8px 16px',
@@ -259,7 +328,7 @@ export default function SettingsPage({
             cursor: 'pointer'
           }}
         >
-          ⚡ {t('workspace.tab.env') || 'Environment Config'}
+          ⚡ {t('settings.tab.env')}
         </button>
       </div>
 
@@ -496,12 +565,29 @@ export default function SettingsPage({
               </div>
             </div>
 
+            {/* Version Info Settings */}
+            <div className="card-outer">
+              <div className="card-inner" style={{ padding: '24px' }}>
+                <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
+                  {t('settings.version.title')}
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
+                  {t('settings.version.desc')}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--text-primary)' }}>
+                  <span style={{ fontWeight: 600 }}>Loom v{appVersion}</span>
+                  <span style={{ color: 'var(--text-tertiary)', fontSize: '0.85rem' }}>(Stable)</span>
+                </div>
+              </div>
+            </div>
+
           </div>
         )}
 
         {/* ── CLI Tools & Templates View ── */}
         {activeSubTab === 'tools' && (
-          <div style={{ display: 'flex', height: '100%', gap: '16px', minHeight: 0 }}>
+          <div style={{ display: 'flex', height: '100%', gap: '16px', minHeight: 0, marginLeft: '28px' }}>
             {/* Left Column: CLI Tools */}
             <div style={{ width: '40%', display: 'flex', flexDirection: 'column', gap: '12px', borderRight: '1px solid var(--border-subtle)', paddingRight: '16px', overflowY: 'auto' }}>
               <div style={{ display: 'flex', gap: '8px' }}>
@@ -545,10 +631,21 @@ export default function SettingsPage({
                   </div>
                 ) : (
                   filteredTools.map(tool => {
+                    const index = cliTools.findIndex(t => t.id === tool.id);
                     const isSelected = selectedTool?.id === tool.id;
+                    const isDragging = index === draggedIndex;
+                    const isDragOver = index === dragOverIndex;
+                    const showTopLine = isDragOver && draggedIndex !== null && draggedIndex > index;
+                    const showBottomLine = isDragOver && draggedIndex !== null && draggedIndex < index;
                     return (
                       <div
                         key={tool.id}
+                        draggable={!isFilterActive}
+                        onDragStart={e => handleDragStart(e, index)}
+                        onDragOver={e => handleDragOver(e, index)}
+                        onDragLeave={handleDragLeave}
+                        onDrop={e => handleDrop(e, index)}
+                        onDragEnd={handleDragEnd}
                         onClick={() => setSelectedTool(tool)}
                         style={{
                           display: 'flex',
@@ -558,54 +655,64 @@ export default function SettingsPage({
                           borderRadius: 'var(--radius-sm)',
                           backgroundColor: isSelected ? 'var(--bg-active)' : 'var(--bg-card)',
                           border: isSelected ? '1px solid var(--accent-purple)' : '1px solid var(--border-subtle)',
-                          cursor: 'pointer',
+                          borderTop: showTopLine ? '2px solid var(--accent-purple)' : isSelected ? '1px solid var(--accent-purple)' : '1px solid var(--border-subtle)',
+                          borderBottom: showBottomLine ? '2px solid var(--accent-purple)' : isSelected ? '1px solid var(--accent-purple)' : '1px solid var(--border-subtle)',
+                          opacity: isDragging ? 0.4 : 1,
+                          cursor: isFilterActive ? 'pointer' : 'grab',
                           transition: 'background 0.2s'
                         }}
                       >
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', overflow: 'hidden', flexGrow: 1 }}>
-                          <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
-                            {tool.name}
-                          </span>
-                          <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tool.path}>
-                            {tool.path}
-                          </span>
-                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '4px' }}>
-                            <select
-                              value={tool.category_id || ''}
-                              onChange={e => handleCategoryChange(tool.id, e.target.value)}
-                              onClick={e => e.stopPropagation()}
-                              style={{
-                                fontSize: '0.7rem',
-                                padding: '2px 4px',
-                                borderRadius: '4px',
-                                border: '1px solid var(--border-subtle)',
-                                backgroundColor: 'var(--bg-input)',
-                                color: 'var(--text-secondary)'
-                              }}
-                            >
-                              <option value="">{t('db.tool.noCategory')}</option>
-                              {categories.map(c => (
-                                <option key={c.id} value={c.id}>{c.name}</option>
-                              ))}
-                            </select>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEditingToolConfig(tool);
-                              }}
-                              className="btn btn-ghost"
-                              style={{
-                                fontSize: '0.7rem',
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                height: 'auto',
-                                minHeight: 'auto',
-                                lineHeight: '1'
-                              }}
-                            >
-                              ⚙️ {t('db.tool.config') || '配置'}
-                            </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexGrow: 1, overflow: 'hidden' }}>
+                          {!isFilterActive && (
+                            <div style={{ color: 'var(--text-tertiary)', cursor: 'grab', userSelect: 'none', paddingRight: '4px' }}>
+                              ⋮⋮
+                            </div>
+                          )}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', overflow: 'hidden', flexGrow: 1 }}>
+                            <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                              {tool.name}
+                            </span>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tool.path}>
+                              {tool.path}
+                            </span>
+                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '4px' }}>
+                              <select
+                                value={tool.category_id || ''}
+                                onChange={e => handleCategoryChange(tool.id, e.target.value)}
+                                onClick={e => e.stopPropagation()}
+                                style={{
+                                  fontSize: '0.7rem',
+                                  padding: '2px 4px',
+                                  borderRadius: '4px',
+                                  border: '1px solid var(--border-subtle)',
+                                  backgroundColor: 'var(--bg-input)',
+                                  color: 'var(--text-secondary)'
+                                }}
+                              >
+                                <option value="">{t('db.tool.noCategory')}</option>
+                                {categories.map(c => (
+                                  <option key={c.id} value={c.id}>{c.name}</option>
+                                ))}
+                              </select>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingToolConfig(tool);
+                                }}
+                                className="btn btn-ghost"
+                                style={{
+                                  fontSize: '0.7rem',
+                                  padding: '2px 6px',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  height: 'auto',
+                                  minHeight: 'auto',
+                                  lineHeight: '1'
+                                }}
+                              >
+                                ⚙️ {t('db.tool.config') || '配置'}
+                              </button>
+                            </div>
                           </div>
                         </div>
 
@@ -795,18 +902,33 @@ function CliToolConfigModal({ tool, onClose, onSave }: CliToolConfigModalProps) 
   const [envPairs, setEnvPairs] = useState<{ k: string; v: string }[]>(
     Object.entries(tool.custom_env ?? {}).map(([k, v]) => ({ k, v }))
   );
+  const [globalVars, setGlobalVars] = useState<GlobalEnvVar[]>([]);
+  const [selectedGlobalVarIds, setSelectedGlobalVarIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    getGlobalEnvVars().then(setGlobalVars).catch(console.error);
+  }, []);
 
   const addEnv = () => setEnvPairs(p => [...p, { k: '', v: '' }]);
   const removeEnv = (i: number) => setEnvPairs(p => p.filter((_, idx) => idx !== i));
   const updateEnv = (i: number, field: 'k' | 'v', val: string) =>
     setEnvPairs(p => p.map((e, idx) => idx === i ? { ...e, [field]: val } : e));
 
+  const toggleGlobalVar = (id: string) => {
+    setSelectedGlobalVarIds(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
       const args = argsStr.trim() ? argsStr.trim().split(/\s+/) : [];
       const env: Record<string, string> = {};
+
+      // Merge selected global vars first (tool-level overrides win)
+      for (const gv of globalVars.filter(g => selectedGlobalVarIds.includes(g.id))) {
+        env[gv.key] = gv.value;
+      }
       for (const { k, v } of envPairs) {
         if (k.trim()) {
           const key = k.trim();
@@ -833,13 +955,13 @@ function CliToolConfigModal({ tool, onClose, onSave }: CliToolConfigModalProps) 
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 580 }} onClick={e => e.stopPropagation()}>
+      <div className="modal" style={{ maxWidth: 580, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <div className="modal-title">{t('db.tool.configTitle') || 'Configure CLI Tool'}</div>
           <button className="btn-icon" onClick={onClose}>✕</button>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" style={{ overflowY: 'auto', flex: 1, minHeight: 0 }}>
           <div className="spec-bezel-outer">
             <div className="spec-bezel-inner" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div className="form-group">
@@ -852,6 +974,34 @@ function CliToolConfigModal({ tool, onClose, onSave }: CliToolConfigModalProps) 
                 />
               </div>
 
+              {/* Global Env Var selector */}
+              {globalVars.length > 0 && (
+                <div className="form-group">
+                  <label className="form-label" style={{ marginBottom: 4 }}>
+                    {t('temp.modal.globalEnvs')}
+                  </label>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 8 }}>
+                    {t('temp.modal.globalEnvsDesc')}
+                  </div>
+                  <div className="env-chip-grid">
+                    {globalVars.map(gv => {
+                      const checked = selectedGlobalVarIds.includes(gv.id);
+                      return (
+                        <div
+                          key={gv.id}
+                          className={`env-chip ${checked ? 'active' : ''}`}
+                          onClick={() => toggleGlobalVar(gv.id)}
+                          title={`${gv.key}=${gv.value}${gv.description ? ' (' + gv.description + ')' : ''}`}
+                        >
+                          <span className="env-chip-check">✓</span>
+                          <span>{gv.key}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="form-group">
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
                   <label className="form-label" style={{ margin: 0 }}>{t('db.tool.customEnv') || 'Tool Environment Variables'}</label>
@@ -860,7 +1010,7 @@ function CliToolConfigModal({ tool, onClose, onSave }: CliToolConfigModalProps) 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto', paddingRight: '4px' }}>
                   {envPairs.length === 0 ? (
                     <div style={{ fontSize: 12, color: 'var(--text-tertiary)', textAlign: 'center', padding: '12px', background: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)' }}>
-                      No environment variables configured.
+                      {t('temp.modal.noVars')}
                     </div>
                   ) : (
                     envPairs.map((pair, i) => (

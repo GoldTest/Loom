@@ -108,6 +108,13 @@ const zhDict: Dictionary = {
   'env.toast.selectTool': '请配置环境变量',
   'env.toast.keyEmpty': '键不能为空',
   'env.toast.dupKey': '重复的键：{key}',
+  'env.group.valueCount': '个候选值',
+  'env.group.selectOne': '单选，互斥',
+  'env.group.clear': '取消选择',
+  'env.btn.addValue': '添加候选值',
+  'env.modal.keyLocked': '向已有变量添加新候选值时，键名不可修改',
+  'env.modal.descPlaceholder': '例如：生产环境 / 开发环境',
+  'env.empty.noSearchResult': '没有找到匹配的环境变量',
 
   // TemplatesPage
   'temp.title': '运行参数模板',
@@ -204,7 +211,12 @@ const zhDict: Dictionary = {
   'settings.font.xlarge': '特大 (18px)',
   'settings.toast.fontSaved': '字体设置已保存',
   'settings.toast.fontSaveFailed': '保存字体失败',
+  'settings.version.title': '版本信息',
+  'settings.version.desc': '查看 Loom 当前的软件版本。',
   'nav.settings': '系统设置',
+  'settings.tab.appearance': '外观偏好',
+  'settings.tab.tools': 'CLI 工具',
+  'settings.tab.env': '环境变量',
 
   // Projects & Agents
   'proj.title': '项目工作区',
@@ -250,7 +262,7 @@ const zhDict: Dictionary = {
   'proj.status.interrupted': '已中断',
   'nav.projects': '项目管理',
   'workspace.tab.console': '控制台',
-  'workspace.tab.tools': '工具与模板',
+  'workspace.tab.tools': '本地CLI',
   'workspace.tab.env': '环境配置',
   'workspace.tab.instances': '实例监控',
   'proj.sidebar.add': '注册项目',
@@ -360,6 +372,13 @@ const enDict: Dictionary = {
   'env.toast.selectTool': 'Please configure environment variables',
   'env.toast.keyEmpty': 'Key cannot be empty',
   'env.toast.dupKey': 'Duplicate key: {key}',
+  'env.group.valueCount': 'values',
+  'env.group.selectOne': 'pick one',
+  'env.group.clear': 'clear',
+  'env.btn.addValue': 'Add Value',
+  'env.modal.keyLocked': 'Key is locked when adding a value to an existing variable',
+  'env.modal.descPlaceholder': 'e.g. Production / Development',
+  'env.empty.noSearchResult': 'No matching environment variables found',
 
   // TemplatesPage
   'temp.title': 'Run Templates',
@@ -456,7 +475,12 @@ const enDict: Dictionary = {
   'settings.font.xlarge': 'Extra Large (18px)',
   'settings.toast.fontSaved': 'Font settings saved',
   'settings.toast.fontSaveFailed': 'Failed to save font settings',
+  'settings.version.title': 'Version Info',
+  'settings.version.desc': 'View the current version of Loom.',
   'nav.settings': 'Settings',
+  'settings.tab.appearance': 'Appearance',
+  'settings.tab.tools': 'CLI Tools',
+  'settings.tab.env': 'Env Variables',
 
   // Projects & Agents
   'proj.title': 'Projects Workspace',
@@ -502,7 +526,7 @@ const enDict: Dictionary = {
   'proj.status.interrupted': 'Interrupted',
   'nav.projects': 'Projects',
   'workspace.tab.console': 'Console',
-  'workspace.tab.tools': 'Tools & Templates',
+  'workspace.tab.tools': 'Local CLI',
   'workspace.tab.env': 'Environment',
   'workspace.tab.instances': 'Instances',
   'proj.sidebar.add': 'Register Project',
