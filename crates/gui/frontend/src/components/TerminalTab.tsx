@@ -133,16 +133,9 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
       if (textarea && termEl) {
         const logState = (action: string) => {
           const rect = textarea.getBoundingClientRect();
-          console.log(`IME Log [${action}]:`, {
-            isComposing,
-            scrollLeft: textarea.scrollLeft,
-            scrollTop: textarea.scrollTop,
-            left: textarea.style.left,
-            top: textarea.style.top,
-            width: textarea.style.width,
-            height: textarea.style.height,
-            rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
-          });
+          const activeEl = document.activeElement;
+          const activeInfo = activeEl ? `${activeEl.tagName}.${activeEl.className}` : 'none';
+          console.log(`[IME ${action}] activeElement=${activeInfo} scroll=${textarea.scrollLeft},${textarea.scrollTop} styleLeft=${textarea.style.left} styleTop=${textarea.style.top} rectLeft=${rect.left} rectTop=${rect.top} rectWidth=${rect.width} rectHeight=${rect.height} valLen=${textarea.value.length} sel=${textarea.selectionStart},${textarea.selectionEnd}`);
         };
 
         const handleStart = (e: any) => {
@@ -177,23 +170,35 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
         };
         const handleKey = (e: any) => {
           if (e.key === 'Backspace' || e.key === 'Delete') {
-            console.log('IME Log: backspace/delete keydown!', e.key);
+            console.log('IME Log: backspace/delete keydown (capture)!', e.key);
             logState('keydown delete');
           }
+        };
+        const handleFocus = () => {
+          console.log('IME Log: textarea focus event');
+          logState('focus');
+        };
+        const handleBlur = () => {
+          console.log('IME Log: textarea blur event');
+          logState('blur');
         };
 
         textarea.addEventListener('compositionstart', handleStart);
         textarea.addEventListener('compositionend', handleEnd);
         textarea.addEventListener('compositionupdate', handleUpdate);
         textarea.addEventListener('scroll', handleScroll);
-        textarea.addEventListener('keydown', handleKey);
+        textarea.addEventListener('keydown', handleKey, true);
+        textarea.addEventListener('focus', handleFocus, true);
+        textarea.addEventListener('blur', handleBlur, true);
         cleanupComposition = () => {
           console.log('IME Log: cleanup called');
           textarea.removeEventListener('compositionstart', handleStart);
           textarea.removeEventListener('compositionend', handleEnd);
           textarea.removeEventListener('compositionupdate', handleUpdate);
           textarea.removeEventListener('scroll', handleScroll);
-          textarea.removeEventListener('keydown', handleKey);
+          textarea.removeEventListener('keydown', handleKey, true);
+          textarea.removeEventListener('focus', handleFocus, true);
+          textarea.removeEventListener('blur', handleBlur, true);
         };
       }
 
