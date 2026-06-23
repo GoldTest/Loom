@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::collections::HashMap;
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri::{
     image::Image,
     menu::{MenuBuilder, MenuItemBuilder},
@@ -199,6 +200,22 @@ fn get_theme() -> Result<String, String> {
 #[tauri::command]
 fn set_theme(theme: String) -> Result<(), String> {
     core_set_theme(theme).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_autostart(app: tauri::AppHandle) -> Result<bool, String> {
+    let autostart_manager = app.autolaunch();
+    autostart_manager.is_enabled().map_err(|e: tauri_plugin_autostart::Error| e.to_string())
+}
+
+#[tauri::command]
+fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    let autostart_manager = app.autolaunch();
+    if enabled {
+        autostart_manager.enable().map_err(|e: tauri_plugin_autostart::Error| e.to_string())
+    } else {
+        autostart_manager.disable().map_err(|e: tauri_plugin_autostart::Error| e.to_string())
+    }
 }
 
 #[tauri::command]
@@ -795,6 +812,7 @@ fn main() {
                 let _ = window.set_focus();
             }
         }))
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--minimized"])))
         .setup(|app| {
             // Run process synchronization in a background thread to prevent blocking Tauri's main startup thread (which causes the white screen freeze).
             std::thread::spawn(|| {
@@ -869,6 +887,8 @@ fn main() {
             set_language,
             get_theme,
             set_theme,
+            get_autostart,
+            set_autostart,
             get_global_env_vars,
             create_global_env_var,
             update_global_env_var,

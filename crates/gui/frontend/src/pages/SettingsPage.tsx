@@ -12,7 +12,9 @@ import {
   updateCliEnv,
   updateCliArgs,
   getGlobalEnvVars,
-  reorderCliTools
+  reorderCliTools,
+  getAutostart,
+  setAutostart
 } from '../api';
 import type { CliTool, Category, Template, GlobalEnvVar } from '../types';
 import EnvVarsPage from './EnvVarsPage';
@@ -52,6 +54,7 @@ export default function SettingsPage({
   const toast = useToast();
   const [activeSubTab, setActiveSubTab] = useState<Tab>('general');
   const [appVersion, setAppVersion] = useState<string>('0.1.5');
+  const [autostartEnabled, setAutostartEnabled] = useState<boolean>(false);
 
   useEffect(() => {
     import('@tauri-apps/api/app')
@@ -59,7 +62,22 @@ export default function SettingsPage({
         getVersion().then(v => setAppVersion(v)).catch(() => {});
       })
       .catch(() => {});
+
+    getAutostart()
+      .then(enabled => setAutostartEnabled(enabled))
+      .catch(err => console.error('Failed to fetch autostart status:', err));
   }, []);
+
+  const handleAutostartToggle = async (enabled: boolean) => {
+    try {
+      await setAutostart(enabled);
+      setAutostartEnabled(enabled);
+      toast.success(t('settings.toast.autostartSaved'));
+    } catch (err) {
+      console.error('Failed to set autostart status:', err);
+      toast.error(t('settings.toast.autostartSaveFailed'));
+    }
+  };
 
   // ─── CLI Tools & Templates Tab States ──────────────────────────
   const [cliTools, setCliTools] = useState<CliTool[]>([]);
@@ -560,6 +578,56 @@ export default function SettingsPage({
                     style={{ borderRadius: 'var(--radius-md)', padding: '10px 20px' }}
                   >
                     English
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* System Settings */}
+            <div className="card-outer">
+              <div className="card-inner" style={{ padding: '24px' }}>
+                <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '4px' }}>
+                  {t('settings.system.title')}
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '20px' }}>
+                  {t('settings.system.desc')}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: 500, color: 'var(--text-primary)' }}>
+                      {t('settings.system.autostart')}
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                      {t('settings.system.autostartDesc')}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleAutostartToggle(!autostartEnabled)}
+                    style={{
+                      background: autostartEnabled ? 'var(--accent-purple)' : 'var(--bg-elevated)',
+                      border: autostartEnabled ? '1px solid var(--accent-purple)' : '1px solid var(--border-mid)',
+                      borderRadius: '20px',
+                      width: '48px',
+                      height: '24px',
+                      position: 'relative',
+                      cursor: 'pointer',
+                      transition: 'all 200ms ease',
+                      padding: 0
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '18px',
+                        height: '18px',
+                        borderRadius: '50%',
+                        background: autostartEnabled ? '#ffffff' : 'var(--text-secondary)',
+                        position: 'absolute',
+                        top: '2px',
+                        left: autostartEnabled ? '26px' : '3px',
+                        transition: 'all 200ms ease'
+                      }}
+                    />
                   </button>
                 </div>
               </div>

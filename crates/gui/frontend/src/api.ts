@@ -195,3 +195,10 @@ export const selectDirectory = (): Promise<string | null> =>
 
 export const reorderProjects = (ids: string[]): Promise<void> =>
   invoke('reorder_projects', { ids });
+
+// ─── Autostart Configurations ──────────────────────────────
+export const getAutostart = (): Promise<boolean> =>
+  invoke('get_autostart');
+
+export const setAutostart = (enabled: boolean): Promise<void> =>
+  invoke('set_autostart', { enabled });
