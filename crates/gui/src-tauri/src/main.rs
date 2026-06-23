@@ -766,7 +766,12 @@ fn log_frontend(level: String, message: String) {
     println!("[Frontend-{}] {}", level, message);
 }
 
+mod pty;
+
 fn main() {
+    #[cfg(target_os = "windows")]
+    pty::init_process_session_job();
+
     if let Ok(cmd) = std::env::var("TAURI_TEST_CMD") {
         let args_json = std::env::var("TAURI_TEST_ARGS").unwrap_or_else(|_| "{}".to_string());
         let res = execute_test_command(&cmd, &args_json);
@@ -783,6 +788,7 @@ fn main() {
     }
 
     tauri::Builder::default()
+        .manage(pty::PtyState::default())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
@@ -790,7 +796,11 @@ fn main() {
             }
         }))
         .setup(|app| {
-            let _ = core_sync_running_processes();
+            // Run process synchronization in a background thread to prevent blocking Tauri's main startup thread (which causes the white screen freeze).
+            std::thread::spawn(|| {
+                let _ = core_sync_running_processes();
+            });
+
             let quit_item = MenuItemBuilder::with_id("quit", "Quit / 退出").build(app)?;
             let show_item = MenuItemBuilder::with_id("show", "Show Loom / 显示主窗口").build(app)?;
             let menu = MenuBuilder::new(app).items(&[&show_item, &quit_item]).build()?;
@@ -881,7 +891,12 @@ fn main() {
             get_agent_logs,
             kill_agent_process,
             bring_agent_to_foreground,
-            select_directory
+            select_directory,
+            pty::pty_spawn,
+            pty::pty_write,
+            pty::pty_resize,
+            pty::pty_history,
+            pty::pty_close
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
