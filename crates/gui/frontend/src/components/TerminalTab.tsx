@@ -129,37 +129,71 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
 
       const textarea = term.textarea;
       const termEl = term.element;
+      console.log('IME Log: Init - textarea exists:', !!textarea, 'termEl exists:', !!termEl);
       if (textarea && termEl) {
-        const handleStart = () => {
+        const logState = (action: string) => {
+          const rect = textarea.getBoundingClientRect();
+          console.log(`IME Log [${action}]:`, {
+            isComposing,
+            scrollLeft: textarea.scrollLeft,
+            scrollTop: textarea.scrollTop,
+            left: textarea.style.left,
+            top: textarea.style.top,
+            width: textarea.style.width,
+            height: textarea.style.height,
+            rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+          });
+        };
+
+        const handleStart = (e: any) => {
           isComposing = true;
           termEl.classList.add('is-composing');
           textarea.scrollLeft = 0;
           textarea.scrollTop = 0;
+          console.log('IME Log: compositionstart - data:', e.data);
+          logState('start');
         };
-        const handleEnd = () => {
+        const handleEnd = (e: any) => {
           isComposing = false;
           termEl.classList.remove('is-composing');
           textarea.scrollLeft = 0;
           textarea.scrollTop = 0;
+          console.log('IME Log: compositionend - data:', e.data);
+          logState('end');
           flushPtyBuffer();
         };
-        const handleUpdate = () => {
+        const handleUpdate = (e: any) => {
           textarea.scrollLeft = 0;
           textarea.scrollTop = 0;
+          console.log('IME Log: compositionupdate - data:', e.data);
+          logState('update');
         };
         const handleScroll = () => {
+          console.log('IME Log: scroll event fired!');
+          logState('scroll before reset');
           textarea.scrollLeft = 0;
           textarea.scrollTop = 0;
+          logState('scroll after reset');
         };
+        const handleKey = (e: any) => {
+          if (e.key === 'Backspace' || e.key === 'Delete') {
+            console.log('IME Log: backspace/delete keydown!', e.key);
+            logState('keydown delete');
+          }
+        };
+
         textarea.addEventListener('compositionstart', handleStart);
         textarea.addEventListener('compositionend', handleEnd);
         textarea.addEventListener('compositionupdate', handleUpdate);
         textarea.addEventListener('scroll', handleScroll);
+        textarea.addEventListener('keydown', handleKey);
         cleanupComposition = () => {
+          console.log('IME Log: cleanup called');
           textarea.removeEventListener('compositionstart', handleStart);
           textarea.removeEventListener('compositionend', handleEnd);
           textarea.removeEventListener('compositionupdate', handleUpdate);
           textarea.removeEventListener('scroll', handleScroll);
+          textarea.removeEventListener('keydown', handleKey);
         };
       }
 
