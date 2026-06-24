@@ -73,16 +73,81 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
       const textarea = term?.textarea;
       if (term && textarea) {
         const { width, height } = getCellDimensions();
-        const cursorX = term.buffer.active.cursorX;
-        const cursorY = term.buffer.active.cursorY;
         
-        textarea.style.left = `${cursorX * width}px`;
-        textarea.style.top = `${cursorY * height}px`;
+        // Custom virtual cursor detection logic
+        const getTargetCursorPosition = (t: any) => {
+          const isHidden = !!t?._core?.coreService?.isCursorHidden;
+          const defaultX = t.buffer.active.cursorX;
+          const defaultY = t.buffer.active.cursorY;
+
+          if (!isHidden) {
+            return { x: defaultX, y: defaultY, isHidden: false };
+          }
+
+          const rows = t.rows;
+          const cols = t.cols;
+          const buffer = t.buffer.active;
+          const viewportY = buffer.viewportY;
+
+          for (let y = rows - 1; y >= 0; y--) {
+            const line = buffer.getLine(viewportY + y);
+            if (!line) continue;
+
+            for (let x = cols - 1; x >= 0; x--) {
+              const cell = line.getCell(x);
+              if (!cell) continue;
+
+              const chars = cell.getChars();
+              const isBlock = chars === '█' || chars === '\u2588';
+              const isBar = chars === '|' || chars === '│' || chars === '\u258f' || chars === '┃' || chars === '▕';
+              const isInverse = cell.isInverse() !== 0;
+
+              const isVirtualCursor = isBlock || isBar || ((chars === ' ' || chars === '') && isInverse);
+
+              if (isVirtualCursor) {
+                // Avoid matching borders or solid lines made of blocks/inverse spaces
+                if (isBlock || (chars === ' ' && isInverse)) {
+                  const leftCell = x > 0 ? line.getCell(x - 1) : null;
+                  const rightCell = x < cols - 1 ? line.getCell(x + 1) : null;
+                  const leftIsBlock = leftCell && (leftCell.getChars() === '█' || leftCell.getChars() === '\u2588' || (leftCell.getChars() === ' ' && leftCell.isInverse() !== 0));
+                  const rightIsBlock = rightCell && (rightCell.getChars() === '█' || rightCell.getChars() === '\u2588' || (rightCell.getChars() === ' ' && rightCell.isInverse() !== 0));
+                  if (leftIsBlock && rightIsBlock) {
+                    continue;
+                  }
+                }
+                return { x, y, isHidden: false };
+              }
+            }
+          }
+
+          return { x: defaultX, y: defaultY, isHidden: true };
+        };
+
+        const target = getTargetCursorPosition(term);
+        
+        textarea.style.left = `${target.x * width}px`;
+        textarea.style.top = `${target.y * height}px`;
+
+        if (isComposing && target.isHidden) {
+          textarea.style.setProperty('color', 'transparent', 'important');
+          textarea.style.setProperty('caret-color', 'transparent', 'important');
+        } else if (isComposing) {
+          textarea.style.setProperty('color', '#e4e4e7', 'important');
+          textarea.style.setProperty('caret-color', '#a1a1aa', 'important');
+        } else {
+          textarea.style.removeProperty('color');
+          textarea.style.removeProperty('caret-color');
+        }
 
         const rect = textarea.getBoundingClientRect();
         invoke('update_ime_position', {
           x: rect.left,
-          y: rect.bottom
+          y: rect.bottom,
+          cursor_x: target.x,
+          cursor_y: target.y,
+          cell_w: width,
+          cell_h: height,
+          is_cursor_hidden: target.isHidden
         }).catch(err => {
           console.warn("Failed to update native IME position:", err);
         });
@@ -184,6 +249,9 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
 
         const handleStart = (e: any) => {
           isComposing = true;
+          if (textarea) {
+            textarea.value = '';
+          }
           termEl.classList.add('is-composing');
           textarea.scrollLeft = 0;
           textarea.scrollTop = 0;
@@ -200,6 +268,13 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
           console.log('IME Log: compositionend - data:', e.data);
           logState('end');
           flushPtyBuffer();
+
+          // Clear the textarea value in the next event loop tick to let xterm.js process the input first
+          setTimeout(() => {
+            if (textarea) {
+              textarea.value = '';
+            }
+          }, 0);
         };
         const handleUpdate = (e: any) => {
           textarea.scrollLeft = 0;
@@ -484,6 +559,13 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
         }
         .xterm.is-composing .xterm-helpers {
           z-index: 10 !important;
+          position: absolute !important;
+          top: 0 !important;
+          left: 0 !important;
+          width: 100% !important;
+          height: 100% !important;
+          overflow: visible !important;
+          pointer-events: none !important;
         }
         .xterm.is-composing .xterm-helper-textarea {
           position: absolute !important;
@@ -495,12 +577,15 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
           margin: 0 !important;
           outline: none !important;
           box-shadow: none !important;
-          color: transparent !important;
+          color: #e4e4e7 !important; /* Make pinyin visible */
           background: transparent !important;
-          caret-color: transparent !important;
+          caret-color: #a1a1aa !important; /* Show caret */
           opacity: 1 !important;
           white-space: nowrap !important;
           z-index: 10 !important;
+          width: 200px !important;
+          height: 20px !important;
+          pointer-events: none !important;
         }
       `}</style>
       <div
