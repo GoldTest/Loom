@@ -57,60 +57,17 @@ use loom_core::storage::{
 
 #[tauri::command]
 fn update_ime_position(
-    window: tauri::Window,
-    x: f64,
-    y: f64,
+    _window: tauri::Window,
+    _x: f64,
+    _y: f64,
     _cursor_x: i32,
     _cursor_y: i32,
     _cell_w: f64,
     _cell_h: f64,
     _is_cursor_hidden: bool,
 ) {
-    #[cfg(target_os = "windows")]
-    {
-        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-        use winapi::shared::windef::{HWND, POINT, RECT};
-        use winapi::um::imm::{
-            ImmGetContext, ImmReleaseContext, ImmSetCompositionWindow, COMPOSITIONFORM, CFS_POINT,
-        };
-
-        let scale_factor = window.scale_factor().unwrap_or(1.0);
-        let physical_x = (x * scale_factor) as i32;
-        let physical_y = (y * scale_factor) as i32;
-
-        if let Ok(handle_wrapper) = window.window_handle() {
-            if let RawWindowHandle::Win32(win32_handle) = handle_wrapper.as_raw() {
-                let hwnd = win32_handle.hwnd.get() as *mut std::ffi::c_void as HWND;
-                unsafe {
-                    // Get the thread ID of the main GUI thread that created the window
-                    let thread_id = winapi::um::winuser::GetWindowThreadProcessId(hwnd, std::ptr::null_mut());
-                    
-                    // Query GUI thread info to find the actual focused child window (WebView2 rendering widget)
-                    let mut gui_thread_info = std::mem::zeroed::<winapi::um::winuser::GUITHREADINFO>();
-                    gui_thread_info.cbSize = std::mem::size_of::<winapi::um::winuser::GUITHREADINFO>() as u32;
-                    
-                    let target_hwnd = if winapi::um::winuser::GetGUIThreadInfo(thread_id, &mut gui_thread_info) != 0
-                        && !gui_thread_info.hwndFocus.is_null()
-                    {
-                        gui_thread_info.hwndFocus
-                    } else {
-                        hwnd
-                    };
-
-                    let himc = ImmGetContext(target_hwnd);
-                    if !himc.is_null() {
-                        let mut form = COMPOSITIONFORM {
-                            dwStyle: CFS_POINT,
-                            ptCurrentPos: POINT { x: physical_x, y: physical_y },
-                            rcArea: RECT { left: 0, top: 0, right: 0, bottom: 0 },
-                        };
-                        ImmSetCompositionWindow(himc, &mut form);
-                        ImmReleaseContext(target_hwnd, himc);
-                    }
-                }
-            }
-        }
-    }
+    // Stub implementation: positioning is now handled natively by WebView2
+    // using unclipped, sized CSS overrides on the textarea during composition.
 }
 
 #[tauri::command]
