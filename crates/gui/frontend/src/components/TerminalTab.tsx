@@ -50,7 +50,74 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
       }
     };
 
+    const getCellDimensions = () => {
+      const measureEl = containerRef.current?.querySelector('.xterm-char-measure-element');
+      if (measureEl) {
+        const rect = measureEl.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          return { width: rect.width, height: rect.height };
+        }
+      }
+      const core = (termRef.current as any)?._core;
+      if (core?._renderService?.dimensions?.css?.cell) {
+        const cell = core._renderService.dimensions.css.cell;
+        if (cell.width > 0 && cell.height > 0) {
+          return { width: cell.width, height: cell.height };
+        }
+      }
+      return { width: 7.15, height: 15.17 };
+    };
 
+    const syncTextareaPosition = () => {
+      const term = termRef.current;
+      const textarea = term?.textarea;
+      const container = containerRef.current;
+      if (term && textarea && container) {
+        const { width, height } = getCellDimensions();
+        
+        // Custom single-row virtual cursor detection logic
+        const getTargetCursorPosition = (t: any) => {
+          const defaultX = t.buffer.active.cursorX;
+          const defaultY = t.buffer.active.cursorY;
+          const isHidden = !!t?._core?.coreService?.isCursorHidden;
+
+          if (!isHidden) {
+            return { x: defaultX, y: defaultY };
+          }
+
+          // If cursor is hidden (e.g. in pwsh with PSReadLine), scan only the active cursor row
+          const buffer = t.buffer.active;
+          const line = buffer.getLine(buffer.viewportY + defaultY);
+          if (line) {
+            const cols = t.cols;
+            // Scan from left to right to find the first inverse cell (virtual cursor)
+            for (let x = 0; x < cols; x++) {
+              const cell = line.getCell(x);
+              if (!cell) continue;
+
+              const isInverse = cell.isInverse() !== 0;
+              if (isInverse) {
+                return { x, y: defaultY };
+              }
+            }
+          }
+
+          return { x: defaultX, y: defaultY };
+        };
+
+        const target = getTargetCursorPosition(term);
+        
+        // Calculate coordinates relative to the terminal container (.xterm-helpers)
+        // using absolute positioning to avoid viewport/transform mismatch issues.
+        const leftPx = `${target.x * width}px`;
+        const topPx = `${target.y * height}px`;
+        
+        textarea.style.setProperty('--ime-left', leftPx);
+        textarea.style.setProperty('--ime-top', topPx);
+        textarea.style.left = leftPx;
+        textarea.style.top = topPx;
+      }
+    };
 
     const preventGlobalScroll = (e: Event) => {
       const target = e.target;
@@ -150,6 +217,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
           termEl.classList.add('is-composing');
           textarea.scrollLeft = 0;
           textarea.scrollTop = 0;
+          syncTextareaPosition();
           console.log('IME Log: compositionstart - data:', e.data);
           logState('start');
         };
@@ -158,6 +226,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
           termEl.classList.remove('is-composing');
           textarea.scrollLeft = 0;
           textarea.scrollTop = 0;
+          syncTextareaPosition();
           console.log('IME Log: compositionend - data:', e.data);
           logState('end');
           flushPtyBuffer();
@@ -165,6 +234,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
         const handleUpdate = (e: any) => {
           textarea.scrollLeft = 0;
           textarea.scrollTop = 0;
+          syncTextareaPosition();
           console.log('IME Log: compositionupdate - data:', e.data);
           logState('update');
         };
@@ -453,8 +523,11 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
           overflow: hidden;
         }
         .xterm.is-composing .xterm-helper-textarea {
+          position: absolute !important;
+          left: var(--ime-left, 0px) !important;
+          top: var(--ime-top, 0px) !important;
           opacity: 1 !important;
-          z-index: 10 !important;
+          z-index: 99999 !important;
           width: 200px !important;
           height: 16px !important;
           clip: auto !important;
