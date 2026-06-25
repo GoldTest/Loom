@@ -85,18 +85,21 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
             return { x: defaultX, y: defaultY };
           }
 
-          // If cursor is hidden (e.g. in pwsh with PSReadLine), scan only the active cursor row
+          // If cursor is hidden (e.g. in pwsh with PSReadLine), scan from right to left
+          // on the active row to find the first cell representing the virtual cursor.
           const buffer = t.buffer.active;
           const line = buffer.getLine(buffer.viewportY + defaultY);
           if (line) {
             const cols = t.cols;
-            // Scan from left to right to find the first inverse cell (virtual cursor)
-            for (let x = 0; x < cols; x++) {
+            const startX = Math.min(defaultX, cols - 1);
+            for (let x = startX; x >= 0; x--) {
               const cell = line.getCell(x);
               if (!cell) continue;
 
               const isInverse = cell.isInverse() !== 0;
-              if (isInverse) {
+              const isCustomBg = !cell.isBgDefault() || cell.isBgRGB() || cell.isBgPalette();
+              
+              if (isInverse || isCustomBg) {
                 return { x, y: defaultY };
               }
             }
