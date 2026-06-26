@@ -128,6 +128,8 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
     };
 
     const preventGlobalScroll = (e: Event) => {
+      if (!isVisibleRef.current) return;
+
       const target = e.target;
       if (target === document || target === window) {
         window.scrollTo(0, 0);
@@ -157,7 +159,9 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
           return;
         }
       }
-      if (el) {
+      
+      const container = containerRef.current;
+      if (el && container && el.contains(container)) {
         el.scrollLeft = 0;
         el.scrollTop = 0;
       }
