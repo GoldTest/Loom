@@ -5,10 +5,19 @@ import {
   getGlobalEnvVars,
   reorderTemplates,
   listProjectFiles,
-  openFileWithSystem
+  openFileWithSystem,
+  getProjectSkills,
+  toggleProjectSkill,
+  scanProjectAgentDocs,
+  createProjectAgentDoc,
+  deleteFileEntry,
+  getGlobalSkills,
+  getGlobalDocs,
+  importGlobalSkillToProject,
+  importGlobalDocToProject
 } from '../api';
 import type { FileEntry } from '../api';
-import type { Project, CliTool, Template } from '../types';
+import type { Project, CliTool, Template, ProjectSkill, AgentDoc, GlobalSkillTemplate, GlobalDocTemplate } from '../types';
 import { useToast } from '../ToastContext';
 import { useI18n } from '../I18nContext';
 import { TerminalTab } from '../components/TerminalTab';
@@ -23,7 +32,7 @@ interface Props {
 interface ConsoleTab {
   id: string; // 'overview' / 终端 sessionId / 编辑器文件绝对路径
   title: string;
-  type: 'overview' | 'terminal' | 'editor';
+  type: 'overview' | 'terminal' | 'editor' | 'agents-skills';
   cwd: string;
   command?: string;
   args?: string[];
@@ -57,10 +66,28 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
 
   // Multi-tab interactive CLI terminal states
   const [tabs, setTabs] = useState<ConsoleTab[]>([
-    { id: 'overview', title: '概览', type: 'overview', cwd: project.root_path }
+    { id: 'overview', title: '概览', type: 'overview', cwd: project.root_path },
+    { id: 'agents-skills', title: '技能管理', type: 'agents-skills', cwd: project.root_path }
   ]);
   const [activeTabId, setActiveTabId] = useState<string>('overview');
   const [isGridLayout, setIsGridLayout] = useState<boolean>(false);
+
+  // Agent & Skills state
+  const [skills, setSkills] = useState<ProjectSkill[]>([]);
+  const [agentDocs, setAgentDocs] = useState<AgentDoc[]>([]);
+  const [loadingSkills, setLoadingSkills] = useState(false);
+  const [loadingDocs, setLoadingDocs] = useState(false);
+  const [showAddDocModal, setShowAddDocModal] = useState(false);
+  const [newDocPath, setNewDocPath] = useState('');
+  const [newDocType, setNewDocType] = useState('claude');
+
+  // Import from global states
+  const [showImportSkillModal, setShowImportSkillModal] = useState(false);
+  const [showImportDocModal, setShowImportDocModal] = useState(false);
+  const [globalSkills, setGlobalSkills] = useState<GlobalSkillTemplate[]>([]);
+  const [globalDocs, setGlobalDocs] = useState<GlobalDocTemplate[]>([]);
+  const [selectedGlobalDoc, setSelectedGlobalDoc] = useState<GlobalDocTemplate | null>(null);
+  const [importDocRelPath, setImportDocRelPath] = useState('');
 
   // File Explorer state
   const [currentPath, setCurrentPath] = useState<string>(project.root_path);
@@ -68,6 +95,9 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
   const [loadingFiles, setLoadingFiles] = useState<boolean>(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const [fileFilter, setFileFilter] = useState<string>('');
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; file: FileEntry } | null>(null);
 
   const loadFiles = useCallback(async (path: string) => {
     setLoadingFiles(true);
@@ -195,6 +225,37 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
     }
   };
 
+  const handleContextMenu = (e: React.MouseEvent, file: FileEntry) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, file });
+  };
+
+  const handleCloseContextMenu = () => setContextMenu(null);
+
+  const handleDeleteFile = async () => {
+    if (!contextMenu) return;
+    const { file } = contextMenu;
+    const confirmMsg = file.is_dir
+      ? `确定要删除文件夹 "${file.name}" 及其所有内容吗？此操作不可撤销。`
+      : `确定要删除文件 "${file.name}" 吗？此操作不可撤销。`;
+    if (!confirm(confirmMsg)) {
+      setContextMenu(null);
+      return;
+    }
+    setContextMenu(null);
+    try {
+      await deleteFileEntry(file.path, file.is_dir);
+      toast.success(`已删除 ${file.name}`);
+      // Close any open editor tab for this file
+      setTabs(prev => prev.filter(t => t.id !== file.path));
+      if (activeTabId === file.path) setActiveTabId('overview');
+      loadFiles(currentPath);
+    } catch (e: any) {
+      toast.error(`删除失败: ${String(e)}`);
+    }
+  };
+
   const handleGoUp = () => {
     let cleanPath = currentPath.replace(/\\/g, '/');
     if (cleanPath.endsWith('/') && cleanPath.length > 3) {
@@ -293,14 +354,131 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
     }
   }, []);
 
+  const loadSkillsAndDocs = useCallback(async () => {
+    setLoadingSkills(true);
+    setLoadingDocs(true);
+    try {
+      const skillsData = await getProjectSkills(project.id);
+      setSkills(skillsData);
+    } catch (e) {
+      console.error('Failed to load project skills', e);
+    } finally {
+      setLoadingSkills(false);
+    }
+
+    try {
+      const docsData = await scanProjectAgentDocs(project.id);
+      setAgentDocs(docsData);
+    } catch (e) {
+      console.error('Failed to scan agent docs', e);
+    } finally {
+      setLoadingDocs(false);
+    }
+  }, [project.id]);
+
   useEffect(() => {
     if (isVisible) {
       const timer = setTimeout(() => {
         loadToolsAndTemplates();
+        loadSkillsAndDocs();
       }, 0);
       return () => clearTimeout(timer);
     }
-  }, [project.id, isVisible, loadToolsAndTemplates]);
+  }, [project.id, isVisible, loadToolsAndTemplates, loadSkillsAndDocs]);
+
+  const handleToggleSkill = async (skillName: string, enabled: boolean) => {
+    try {
+      await toggleProjectSkill(project.id, skillName, enabled);
+      toast.success(`${enabled ? '开启' : '关闭'} 技能 ${skillName} 成功`);
+      loadSkillsAndDocs();
+    } catch (e) {
+      toast.error(`操作失败: ${String(e)}`);
+    }
+  };
+
+  const handleCreateDoc = async () => {
+    if (!newDocPath.trim()) {
+      toast.error('路径不能为空');
+      return;
+    }
+    try {
+      const newDoc = await createProjectAgentDoc(project.id, newDocPath.trim(), newDocType);
+      toast.success(`创建文档 ${newDoc.file_name} 成功`);
+      setShowAddDocModal(false);
+      setNewDocPath('');
+      loadSkillsAndDocs();
+      handleOpenFile({
+        name: newDoc.file_name,
+        path: newDoc.absolute_path,
+        is_dir: false,
+        size: 0
+      });
+    } catch (e) {
+      toast.error(`创建失败: ${String(e)}`);
+    }
+  };
+
+  const handleOpenAddDocModal = () => {
+    setNewDocType('claude');
+    setNewDocPath('./CLAUDE.md');
+    setShowAddDocModal(true);
+  };
+
+  const handleOpenImportSkillModal = async () => {
+    try {
+      const data = await getGlobalSkills();
+      setGlobalSkills(data);
+      setShowImportSkillModal(true);
+    } catch (e) {
+      toast.error('加载全局技能列表失败: ' + String(e));
+    }
+  };
+
+  const handleImportSkill = async (skillTemplateId: string) => {
+    try {
+      await importGlobalSkillToProject(project.id, skillTemplateId);
+      toast.success('从全局库导入技能成功');
+      setShowImportSkillModal(false);
+      loadSkillsAndDocs();
+    } catch (e) {
+      toast.error('导入技能失败: ' + String(e));
+    }
+  };
+
+  const handleOpenImportDocModal = async () => {
+    try {
+      const data = await getGlobalDocs();
+      setGlobalDocs(data);
+      if (data.length > 0) {
+        setSelectedGlobalDoc(data[0]);
+        setImportDocRelPath(data[0].default_filename);
+      }
+      setShowImportDocModal(true);
+    } catch (e) {
+      toast.error('加载全局文档模版列表失败: ' + String(e));
+    }
+  };
+
+  const handleImportDoc = async () => {
+    if (!selectedGlobalDoc || !importDocRelPath.trim()) {
+      toast.error('请选择模版并指定相对路径');
+      return;
+    }
+    try {
+      const newDoc = await importGlobalDocToProject(project.id, selectedGlobalDoc.id, importDocRelPath.trim());
+      toast.success(`从全局配置导入文档 "${newDoc.file_name}" 成功`);
+      setShowImportDocModal(false);
+      loadSkillsAndDocs();
+      handleOpenFile({
+        name: newDoc.file_name,
+        path: newDoc.absolute_path,
+        is_dir: false,
+        size: 0
+      });
+    } catch (e) {
+      toast.error('导入文档失败: ' + String(e));
+    }
+  };
 
   // Run Template and spawn a new immersive Terminal Tab in project workspace
   const handleRunTemplate = async (tpl: Template) => {
@@ -713,7 +891,9 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
               </div>
 
               {/* File List Pane */}
-              <div style={{
+              <div
+                onClick={handleCloseContextMenu}
+                style={{
                 flex: 1,
                 overflowY: 'auto',
                 backgroundColor: 'var(--bg-card-inner, rgba(255,255,255,0.03))',
@@ -759,6 +939,7 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                           <tr
                             key={file.path}
                             onDoubleClick={() => handleFileDoubleClick(file)}
+                            onContextMenu={(e) => handleContextMenu(e, file)}
                             style={{
                               borderBottom: '1px solid rgba(255, 255, 255, 0.02)',
                               cursor: 'pointer',
@@ -789,6 +970,254 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
                     </table>
                   );
                 })()}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Agents & Skills Tab Content */}
+        {activeTabId === 'agents-skills' && (
+          <div style={{
+            flexGrow: 1,
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'row',
+            gap: '24px',
+            padding: '0px 24px 24px 24px',
+            overflow: 'hidden'
+          }}>
+            {/* Left Column: Skills Management (50% width) */}
+            <div style={{
+              width: '50%',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+              paddingTop: '2px',
+              overflow: 'hidden'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  🔌 智能体技能管理
+                </h3>
+                <button
+                  onClick={handleOpenImportSkillModal}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '0.8rem',
+                    borderRadius: 'var(--radius-sm, 4px)',
+                    cursor: 'pointer',
+                    backgroundColor: 'var(--bg-elevated, #18181b)',
+                    border: '1px solid var(--border-subtle, #27272a)',
+                    color: 'var(--text-primary, #fff)',
+                    fontWeight: 500
+                  }}
+                >
+                  从全局库导入
+                </button>
+              </div>
+
+              <div style={{
+                flex: 1,
+                overflowY: 'auto',
+                backgroundColor: 'var(--bg-card-inner, rgba(255,255,255,0.03))',
+                borderRadius: 'var(--radius-md, 14px)',
+                border: '1px solid var(--border-subtle, #27272a)',
+                boxShadow: 'var(--shadow-card-inset)',
+                padding: '12px'
+              }}>
+                {loadingSkills ? (
+                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-secondary)' }}>
+                    正在加载技能...
+                  </div>
+                ) : skills.length === 0 ? (
+                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-tertiary)', fontSize: '0.9rem', fontStyle: 'italic' }}>
+                    未检测到项目技能
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {skills.map((skill) => (
+                      <div
+                        key={skill.name}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '12px',
+                          backgroundColor: 'var(--bg-elevated, rgba(255,255,255,0.02))',
+                          border: '1px solid var(--border-subtle, #27272a)',
+                          borderRadius: 'var(--radius-sm, 8px)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minWidth: 0, paddingRight: '12px' }}>
+                          <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            {skill.name}
+                          </span>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }} title={skill.skill_path}>
+                            路径: {skill.skill_path}
+                          </span>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+                            来源: {skill.source}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                          <label className="switch" style={{ display: 'inline-block', position: 'relative', width: '40px', height: '20px' }}>
+                            <input
+                              type="checkbox"
+                              checked={skill.enabled}
+                              onChange={(e) => handleToggleSkill(skill.name, e.target.checked)}
+                              style={{ opacity: 0, width: 0, height: 0 }}
+                            />
+                            <span style={{
+                              position: 'absolute',
+                              cursor: 'pointer',
+                              top: 0, left: 0, right: 0, bottom: 0,
+                              backgroundColor: skill.enabled ? 'var(--accent-emerald, #10b981)' : '#3f3f46',
+                              borderRadius: '20px',
+                              transition: '0.4s'
+                            }}>
+                              <span style={{
+                                position: 'absolute',
+                                content: '""',
+                                height: '14px', width: '14px',
+                                left: skill.enabled ? '22px' : '4px',
+                                bottom: '3px',
+                                backgroundColor: '#fff',
+                                borderRadius: '50%',
+                                transition: '0.4s'
+                              }} />
+                            </span>
+                          </label>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right Column: Agent Docs (50% width) */}
+            <div style={{
+              width: '50%',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+              paddingTop: '2px',
+              overflow: 'hidden'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ margin: 0, fontSize: '1.0rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  📝 智能体指令文档管理
+                </h3>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button
+                    onClick={handleOpenImportDocModal}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '0.8rem',
+                      borderRadius: 'var(--radius-sm, 4px)',
+                      cursor: 'pointer',
+                      backgroundColor: 'var(--bg-elevated, #18181b)',
+                      border: '1px solid var(--border-subtle, #27272a)',
+                      color: 'var(--text-primary, #fff)',
+                      fontWeight: 500
+                    }}
+                  >
+                    从全局库导入
+                  </button>
+                  <button
+                    onClick={handleOpenAddDocModal}
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '0.8rem',
+                      borderRadius: 'var(--radius-sm, 4px)',
+                      cursor: 'pointer',
+                      backgroundColor: 'var(--bg-elevated, #18181b)',
+                      border: '1px solid var(--border-subtle, #27272a)',
+                      color: 'var(--text-primary, #fff)',
+                      fontWeight: 500
+                    }}
+                  >
+                    + 新建指令
+                  </button>
+                </div>
+              </div>
+
+              <div style={{
+                flex: 1,
+                overflowY: 'auto',
+                backgroundColor: 'var(--bg-card-inner, rgba(255,255,255,0.03))',
+                borderRadius: 'var(--radius-md, 14px)',
+                border: '1px solid var(--border-subtle, #27272a)',
+                boxShadow: 'var(--shadow-card-inset)'
+              }}>
+                {loadingDocs ? (
+                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-secondary)' }}>
+                    正在扫描指令文档...
+                  </div>
+                ) : agentDocs.length === 0 ? (
+                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', color: 'var(--text-tertiary)', fontSize: '0.9rem', fontStyle: 'italic' }}>
+                    未检测到指令文件 (CLAUDE.md / AGENTS.md / gemini.md 等)
+                  </div>
+                ) : (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border-subtle, #27272a)', textAlign: 'left', color: 'var(--text-secondary)' }}>
+                        <th style={{ padding: '10px 14px', fontWeight: 600 }}>文件名</th>
+                        <th style={{ padding: '10px 14px', fontWeight: 600 }}>相对路径</th>
+                        <th style={{ padding: '10px 14px', fontWeight: 600, width: '80px', textAlign: 'center' }}>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {agentDocs.map((doc) => (
+                        <tr
+                          key={doc.absolute_path}
+                          onDoubleClick={() => handleOpenFile({
+                            name: doc.file_name,
+                            path: doc.absolute_path,
+                            is_dir: false,
+                            size: 0
+                          })}
+                          style={{
+                            borderBottom: '1px solid rgba(255, 255, 255, 0.02)',
+                            cursor: 'pointer',
+                          }}
+                          className="file-row"
+                        >
+                          <td style={{ padding: '10px 14px', color: 'var(--text-primary)', fontWeight: 500 }}>
+                            📄 {doc.file_name}
+                          </td>
+                          <td style={{ padding: '10px 14px', color: 'var(--text-tertiary)', fontFamily: 'monospace' }}>
+                            {doc.relative_path}
+                          </td>
+                          <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenFile({
+                                  name: doc.file_name,
+                                  path: doc.absolute_path,
+                                  is_dir: false,
+                                  size: 0
+                                });
+                              }}
+                              style={{
+                                padding: '2px 6px',
+                                fontSize: '0.75rem',
+                                borderRadius: '4px',
+                                border: '1px solid var(--border-subtle, #27272a)',
+                                backgroundColor: 'var(--bg-elevated, #18181b)',
+                                color: 'var(--text-secondary)',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              编辑
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
           </div>
@@ -858,6 +1287,319 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
         })}
 
       </div>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <div
+          onClick={handleCloseContextMenu}
+          style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', zIndex: 999 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'fixed',
+              top: contextMenu.y,
+              left: contextMenu.x,
+              zIndex: 1000,
+              backgroundColor: 'var(--bg-modal, #1c1917)',
+              border: '1px solid var(--border-subtle, #3e3e42)',
+              borderRadius: 'var(--radius-sm, 6px)',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+              minWidth: '160px',
+              padding: '4px',
+            }}
+          >
+            <div
+              style={{
+                padding: '4px 8px 6px 8px',
+                fontSize: '0.75rem',
+                color: 'var(--text-tertiary)',
+                borderBottom: '1px solid var(--border-subtle, #27272a)',
+                marginBottom: '4px',
+                userSelect: 'none',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                maxWidth: '200px',
+              }}
+              title={contextMenu.file.name}
+            >
+              {contextMenu.file.is_dir ? '📁' : '📄'} {contextMenu.file.name}
+            </div>
+            <button
+              onClick={handleDeleteFile}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                width: '100%',
+                padding: '6px 12px',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+                color: 'var(--accent-red, #ef4444)',
+                borderRadius: '4px',
+                textAlign: 'left',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(239,68,68,0.12)')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              🗑 删除{contextMenu.file.is_dir ? '文件夹' : '文件'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showAddDocModal && (
+        <div className="modal-backdrop" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0, 0, 0, 0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div className="modal-content" style={{ backgroundColor: 'var(--bg-modal, #1c1917)', padding: '24px', borderRadius: 'var(--radius-md, 8px)', border: '1px solid var(--border-subtle, #27272a)', width: '90%', maxWidth: '400px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-primary)' }}>新建智能体指令文档</h3>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>文档类型 / 预设模板</label>
+              <select
+                value={newDocType}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setNewDocType(val);
+                  if (val === 'claude') setNewDocPath('./CLAUDE.md');
+                  else if (val === 'gemini') setNewDocPath('./gemini.md');
+                  else if (val === 'agents') setNewDocPath('./AGENTS.md');
+                  else if (val === 'agents_instructions') setNewDocPath('./agents_instructions.md');
+                }}
+                style={{
+                  backgroundColor: 'var(--bg-input, #09090b)',
+                  color: 'var(--text-primary, #fff)',
+                  border: '1px solid var(--border-subtle, #27272a)',
+                  borderRadius: 'var(--radius-sm, 6px)',
+                  padding: '8px 10px',
+                  fontSize: '0.85rem',
+                  outline: 'none',
+                }}
+              >
+                <option value="claude">CLAUDE.md (Claude Code)说明文件</option>
+                <option value="gemini">gemini.md (Gemini)说明文件</option>
+                <option value="agents">AGENTS.md (通用Agent)说明文件</option>
+                <option value="agents_instructions">agents_instructions.md 说明文件</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>相对路径</label>
+              <input
+                type="text"
+                value={newDocPath}
+                onChange={(e) => setNewDocPath(e.target.value)}
+                style={{
+                  backgroundColor: 'var(--bg-input, #09090b)',
+                  color: 'var(--text-primary, #fff)',
+                  border: '1px solid var(--border-subtle, #27272a)',
+                  borderRadius: 'var(--radius-sm, 6px)',
+                  padding: '8px 10px',
+                  fontSize: '0.85rem',
+                  outline: 'none',
+                }}
+                placeholder="./CLAUDE.md"
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
+              <button
+                onClick={() => setShowAddDocModal(false)}
+                className="btn btn-ghost"
+                style={{
+                  border: '1px solid var(--border-subtle, #27272a)',
+                  padding: '6px 12px',
+                  borderRadius: 'var(--radius-sm, 6px)',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                }}
+              >
+                取消
+              </button>
+              <button
+                onClick={handleCreateDoc}
+                style={{
+                  backgroundColor: 'var(--accent-emerald, #10b981)',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '6px 12px',
+                  borderRadius: 'var(--radius-sm, 6px)',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                }}
+              >
+                创建
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showImportSkillModal && (
+        <div className="modal-backdrop" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0, 0, 0, 0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => setShowImportSkillModal(false)}>
+          <div className="modal-content" style={{ backgroundColor: 'var(--bg-modal, #1c1917)', padding: '24px', borderRadius: 'var(--radius-md, 8px)', border: '1px solid var(--border-subtle, #27272a)', width: '90%', maxWidth: '460px', display: 'flex', flexDirection: 'column', gap: '16px' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-primary)' }}>从全局库导入项目技能</h3>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '300px', overflowY: 'auto' }}>
+              {globalSkills.length === 0 ? (
+                <div style={{ color: 'var(--text-tertiary)', fontSize: '0.85rem', fontStyle: 'italic', textAlign: 'center', padding: '16px 0' }}>
+                  暂无全局技能模版，请先前往“设置”界面创建全局模版。
+                </div>
+              ) : (
+                globalSkills.map(skill => (
+                  <div
+                    key={skill.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '10px 12px',
+                      backgroundColor: 'var(--bg-elevated, rgba(255,255,255,0.02))',
+                      border: '1px solid var(--border-subtle, #27272a)',
+                      borderRadius: 'var(--radius-sm, 6px)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0, paddingRight: '12px' }}>
+                      <span style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)' }}>{skill.name}</span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{skill.description || '无具体描述'}</span>
+                    </div>
+                    <button
+                      onClick={() => handleImportSkill(skill.id)}
+                      style={{
+                        backgroundColor: 'var(--accent-emerald, #10b981)',
+                        color: '#fff',
+                        border: 'none',
+                        padding: '4px 10px',
+                        borderRadius: 'var(--radius-sm, 4px)',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        flexShrink: 0
+                      }}
+                    >
+                      导入
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+              <button
+                onClick={() => setShowImportSkillModal(false)}
+                className="btn btn-ghost"
+                style={{
+                  border: '1px solid var(--border-subtle, #27272a)',
+                  padding: '6px 12px',
+                  borderRadius: 'var(--radius-sm, 6px)',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                }}
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showImportDocModal && (
+        <div className="modal-backdrop" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0, 0, 0, 0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => setShowImportDocModal(false)}>
+          <div className="modal-content" style={{ backgroundColor: 'var(--bg-modal, #1c1917)', padding: '24px', borderRadius: 'var(--radius-md, 8px)', border: '1px solid var(--border-subtle, #27272a)', width: '90%', maxWidth: '400px', display: 'flex', flexDirection: 'column', gap: '16px' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-primary)' }}>从全局库导入项目指令</h3>
+
+            {globalDocs.length === 0 ? (
+              <div style={{ color: 'var(--text-tertiary)', fontSize: '0.85rem', fontStyle: 'italic', textAlign: 'center', padding: '16px 0' }}>
+                暂无全局指令文档，请先前往“设置”界面创建全局模版。
+              </div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>选用指令模版</label>
+                  <select
+                    value={selectedGlobalDoc?.id || ''}
+                    onChange={(e) => {
+                      const selected = globalDocs.find(d => d.id === e.target.value);
+                      if (selected) {
+                        setSelectedGlobalDoc(selected);
+                        setImportDocRelPath(selected.default_filename);
+                      }
+                    }}
+                    style={{
+                      backgroundColor: 'var(--bg-input, #09090b)',
+                      color: 'var(--text-primary, #fff)',
+                      border: '1px solid var(--border-subtle, #27272a)',
+                      borderRadius: 'var(--radius-sm, 6px)',
+                      padding: '8px 10px',
+                      fontSize: '0.85rem',
+                      outline: 'none',
+                    }}
+                  >
+                    {globalDocs.map(doc => (
+                      <option key={doc.id} value={doc.id}>{doc.alias}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>项目相对路径</label>
+                  <input
+                    type="text"
+                    value={importDocRelPath}
+                    onChange={(e) => setImportDocRelPath(e.target.value)}
+                    style={{
+                      backgroundColor: 'var(--bg-input, #09090b)',
+                      color: 'var(--text-primary, #fff)',
+                      border: '1px solid var(--border-subtle, #27272a)',
+                      borderRadius: 'var(--radius-sm, 6px)',
+                      padding: '8px 10px',
+                      fontSize: '0.85rem',
+                      outline: 'none',
+                    }}
+                    placeholder="./CLAUDE.md"
+                  />
+                </div>
+              </>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
+              <button
+                onClick={() => setShowImportDocModal(false)}
+                className="btn btn-ghost"
+                style={{
+                  border: '1px solid var(--border-subtle, #27272a)',
+                  padding: '6px 12px',
+                  borderRadius: 'var(--radius-sm, 6px)',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                }}
+              >
+                取消
+              </button>
+              {globalDocs.length > 0 && (
+                <button
+                  onClick={handleImportDoc}
+                  style={{
+                    backgroundColor: 'var(--accent-emerald, #10b981)',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '6px 12px',
+                    borderRadius: 'var(--radius-sm, 6px)',
+                    cursor: 'pointer',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                  }}
+                >
+                  导入
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

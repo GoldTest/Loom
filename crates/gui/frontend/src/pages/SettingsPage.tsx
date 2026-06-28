@@ -15,9 +15,19 @@ import {
   reorderCliTools,
   getAutostart,
   setAutostart,
-  openUrl
+  openUrl,
+  getGlobalSkills,
+  createGlobalSkill,
+  updateGlobalSkill,
+  deleteGlobalSkill,
+  getGlobalDocs,
+  createGlobalDoc,
+  updateGlobalDoc,
+  deleteGlobalDoc,
+  parseLocalSkillDir,
+  selectDirectory
 } from '../api';
-import type { CliTool, Category, Template, GlobalEnvVar } from '../types';
+import type { CliTool, Category, Template, GlobalEnvVar, GlobalSkillTemplate, GlobalDocTemplate } from '../types';
 import EnvVarsPage from './EnvVarsPage';
 import { TemplateModal } from './TemplatesPage';
 import { invoke } from '@tauri-apps/api/core';
@@ -43,7 +53,7 @@ const PRESETS = [
   'Fira Code'
 ];
 
-type Tab = 'general' | 'tools' | 'env';
+type Tab = 'general' | 'tools' | 'env' | 'libs';
 
 export default function SettingsPage({
   theme,
@@ -108,6 +118,17 @@ export default function SettingsPage({
   const [editingTemplate, setEditingTemplate] = useState<Template | undefined>();
   const [editingToolConfig, setEditingToolConfig] = useState<CliTool | null>(null);
   const [scanningTools, setScanningTools] = useState(false);
+
+  // ─── Global Libraries (Skills & Docs) tab states ─────────────────
+  const [globalSkills, setGlobalSkills] = useState<GlobalSkillTemplate[]>([]);
+  const [globalDocs, setGlobalDocs] = useState<GlobalDocTemplate[]>([]);
+  const [loadingGlobalSkills, setLoadingGlobalSkills] = useState(false);
+  const [loadingGlobalDocs, setLoadingGlobalDocs] = useState(false);
+  const [editingGlobalSkill, setEditingGlobalSkill] = useState<GlobalSkillTemplate | null>(null);
+  const [isEditSkill, setIsEditSkill] = useState(false);
+  const [showSkillModal, setShowSkillModal] = useState(false);
+  const [editingGlobalDoc, setEditingGlobalDoc] = useState<GlobalDocTemplate | null>(null);
+  const [showDocModal, setShowDocModal] = useState(false);
 
   // Drag and drop states for CLI tools
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -200,12 +221,49 @@ export default function SettingsPage({
     }
   }, [selectedTool]);
 
+  const loadGlobalSkillsAndDocs = useCallback(async () => {
+    setLoadingGlobalSkills(true);
+    setLoadingGlobalDocs(true);
+    try {
+      const skillsData = await getGlobalSkills();
+      setGlobalSkills(skillsData);
+    } catch (e) {
+      console.error('Failed to load global skills:', e);
+    } finally {
+      setLoadingGlobalSkills(false);
+    }
+
+    try {
+      const docsData = await getGlobalDocs();
+      setGlobalDocs(docsData);
+    } catch (e) {
+      console.error('Failed to load global docs:', e);
+    } finally {
+      setLoadingGlobalDocs(false);
+    }
+  }, []);
+
+  const handleImportLocalSkillFolder = async () => {
+    try {
+      const path = await selectDirectory();
+      if (!path) return;
+      const parsed = await parseLocalSkillDir(path);
+      setEditingGlobalSkill(parsed);
+      setIsEditSkill(false);
+      setShowSkillModal(true);
+    } catch (err) {
+      toast.error(t('libs.toast.importFolderFailed') + String(err));
+    }
+  };
+
   useEffect(() => {
     if (activeSubTab === 'tools') {
       loadCategories();
       loadToolsAndTemplates();
+    } else if (activeSubTab === 'libs') {
+      loadGlobalSkillsAndDocs();
     }
-  }, [activeSubTab]);
+  }, [activeSubTab, loadGlobalSkillsAndDocs]);
 
   const handleThemeSelect = async (newTheme: 'dark' | 'day') => {
     try {
@@ -365,6 +423,21 @@ export default function SettingsPage({
           }}
         >
           ⚡ {t('settings.tab.env')}
+        </button>
+        <button
+          onClick={() => setActiveSubTab('libs')}
+          style={{
+            padding: '8px 16px',
+            fontSize: '0.9rem',
+            fontWeight: 500,
+            background: 'none',
+            border: 'none',
+            borderBottom: activeSubTab === 'libs' ? '2px solid var(--accent-purple)' : '2px solid transparent',
+            color: activeSubTab === 'libs' ? 'var(--text-primary)' : 'var(--text-secondary)',
+            cursor: 'pointer'
+          }}
+        >
+          📚 {t('settings.tab.libs')}
         </button>
       </div>
 
@@ -1080,7 +1153,217 @@ export default function SettingsPage({
           </div>
         )}
 
+        {/* ── Global Libraries View ── */}
+        {activeSubTab === 'libs' && (
+          <div style={{ display: 'flex', height: '100%', gap: '20px', minHeight: 0, paddingLeft: '28px', paddingRight: '12px' }}>
+
+            {/* Left Column: Global Skills */}
+            <div style={{ width: '50%', display: 'flex', flexDirection: 'column', gap: '12px', borderRight: '1px solid var(--border-subtle)', paddingRight: '20px', overflowY: 'auto' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '8px' }}>
+                <h3 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  🔌 {t('libs.skills.title')}
+                </h3>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    className="btn btn-ghost"
+                    onClick={handleImportLocalSkillFolder}
+                    style={{ fontSize: '0.75rem', padding: '4px 8px' }}
+                  >
+                    📁 {t('libs.btn.importFolder')}
+                  </button>
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => {
+                      setEditingGlobalSkill(null);
+                      setIsEditSkill(false);
+                      setShowSkillModal(true);
+                    }}
+                    style={{ fontSize: '0.75rem', padding: '4px 8px' }}
+                  >
+                    ＋ {t('libs.btn.newSkill')}
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {loadingGlobalSkills ? (
+                  <div style={{ color: 'var(--text-tertiary)', fontSize: '0.85rem', textAlign: 'center', padding: '20px' }}>
+                    Loading skills...
+                  </div>
+                ) : globalSkills.length === 0 ? (
+                  <div style={{ color: 'var(--text-tertiary)', fontSize: '0.85rem', textAlign: 'center', padding: '20px', fontStyle: 'italic' }}>
+                    {t('libs.empty.skills')}
+                  </div>
+                ) : (
+                  globalSkills.map(skill => (
+                    <div
+                      key={skill.id}
+                      style={{
+                        padding: '12px',
+                        borderRadius: 'var(--radius-sm)',
+                        backgroundColor: 'var(--bg-card)',
+                        border: '1px solid var(--border-subtle)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                        <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.88rem' }}>{skill.name}</span>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            className="btn btn-ghost"
+                            onClick={() => {
+                              setEditingGlobalSkill(skill);
+                              setIsEditSkill(true);
+                              setShowSkillModal(true);
+                            }}
+                            style={{ fontSize: '0.7rem', padding: '2px 6px', height: 'auto', minHeight: 'auto' }}
+                          >
+                            {t('temp.card.btn.edit')}
+                          </button>
+                          <button
+                            className="btn btn-ghost"
+                            onClick={async () => {
+                              if (confirm(t('libs.confirm.deleteSkill', { name: skill.name }))) {
+                                try {
+                                  await deleteGlobalSkill(skill.id);
+                                  toast.success(t('libs.toast.deleteSkillSuccess'));
+                                  loadGlobalSkillsAndDocs();
+                                } catch (err) {
+                                  toast.error(t('libs.toast.deleteSkillFailed') + String(err));
+                                }
+                              }
+                            }}
+                            style={{ fontSize: '0.7rem', padding: '2px 6px', height: 'auto', minHeight: 'auto', color: 'var(--accent-red)' }}
+                          >
+                            {t('libs.modal.delete')}
+                          </button>
+                        </div>
+                      </div>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{skill.description || t('temp.card.notSet')}</span>
+                      <pre style={{ margin: 0, padding: '6px', fontSize: '0.72rem', backgroundColor: 'var(--bg-input, #09090b)', borderRadius: '4px', overflowX: 'auto', color: 'var(--text-tertiary)', maxHeight: '100px', overflowY: 'auto' }}>
+                        {skill.content}
+                      </pre>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Right Column: Global Agent Docs */}
+            <div style={{ width: '50%', display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '8px' }}>
+                <h3 style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  📝 {t('libs.docs.title')}
+                </h3>
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    setEditingGlobalDoc(null);
+                    setShowDocModal(true);
+                  }}
+                  style={{ fontSize: '0.75rem', padding: '4px 8px' }}
+                >
+                  ＋ {t('libs.btn.newDoc')}
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {loadingGlobalDocs ? (
+                  <div style={{ color: 'var(--text-tertiary)', fontSize: '0.85rem', textAlign: 'center', padding: '20px' }}>
+                    Loading docs...
+                  </div>
+                ) : globalDocs.length === 0 ? (
+                  <div style={{ color: 'var(--text-tertiary)', fontSize: '0.85rem', textAlign: 'center', padding: '20px', fontStyle: 'italic' }}>
+                    {t('libs.empty.docs')}
+                  </div>
+                ) : (
+                  globalDocs.map(doc => (
+                    <div
+                      key={doc.id}
+                      style={{
+                        padding: '12px',
+                        borderRadius: 'var(--radius-sm)',
+                        backgroundColor: 'var(--bg-card)',
+                        border: '1px solid var(--border-subtle)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                        <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.88rem' }}>{doc.alias}</span>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            className="btn btn-ghost"
+                            onClick={() => {
+                              setEditingGlobalDoc(doc);
+                              setShowDocModal(true);
+                            }}
+                            style={{ fontSize: '0.7rem', padding: '2px 6px', height: 'auto', minHeight: 'auto' }}
+                          >
+                            {t('temp.card.btn.edit')}
+                          </button>
+                          <button
+                            className="btn btn-ghost"
+                            onClick={async () => {
+                              if (confirm(t('libs.confirm.deleteDoc', { name: doc.alias }))) {
+                                try {
+                                  await deleteGlobalDoc(doc.id);
+                                  toast.success(t('libs.toast.deleteDocSuccess'));
+                                  loadGlobalSkillsAndDocs();
+                                } catch (err) {
+                                  toast.error(t('libs.toast.deleteDocFailed') + String(err));
+                                }
+                              }
+                            }}
+                            style={{ fontSize: '0.7rem', padding: '2px 6px', height: 'auto', minHeight: 'auto', color: 'var(--accent-red)' }}
+                          >
+                            {t('libs.modal.delete')}
+                          </button>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                        <span>{t('libs.modal.docDefaultFilename')}:</span>
+                        <span style={{ fontFamily: 'monospace', color: 'var(--text-primary)' }}>{doc.default_filename}</span>
+                      </div>
+                      <pre style={{ margin: 0, padding: '6px', fontSize: '0.72rem', backgroundColor: 'var(--bg-input, #09090b)', borderRadius: '4px', overflowX: 'auto', color: 'var(--text-tertiary)', maxHeight: '100px', overflowY: 'auto' }}>
+                        {doc.content}
+                      </pre>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+          </div>
+        )}
+
       </div>
+
+      {showSkillModal && (
+        <GlobalSkillModal
+          skill={editingGlobalSkill || undefined}
+          isEdit={isEditSkill}
+          onClose={() => setShowSkillModal(false)}
+          onSave={() => {
+            setShowSkillModal(false);
+            loadGlobalSkillsAndDocs();
+          }}
+        />
+      )}
+
+      {showDocModal && (
+        <GlobalDocModal
+          doc={editingGlobalDoc || undefined}
+          onClose={() => setShowDocModal(false)}
+          onSave={() => {
+            setShowDocModal(false);
+            loadGlobalSkillsAndDocs();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1228,6 +1511,342 @@ function CliToolConfigModal({ tool, onClose, onSave }: CliToolConfigModalProps) 
           <button className="btn btn-ghost" onClick={onClose}>{t('cat.modal.btn.cancel')}</button>
           <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
             {saving ? t('env.btn.saving') : t('env.btn.save')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface GlobalSkillModalProps {
+  skill?: GlobalSkillTemplate;
+  isEdit?: boolean;
+  onClose: () => void;
+  onSave: () => void;
+}
+
+function GlobalSkillModal({ skill, isEdit, onClose, onSave }: GlobalSkillModalProps) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [name, setName] = useState(skill?.name ?? '');
+  const [description, setDescription] = useState(skill?.description ?? '');
+  const [content, setContent] = useState(skill?.content ?? '');
+
+  // Convert Record<string, string> to array for easy state management
+  const [subFiles, setSubFiles] = useState<{ path: string; content: string }[]>(
+    Object.entries(skill?.files ?? {}).map(([path, content]) => ({ path, content }))
+  );
+
+  // Track active file being edited (-1 means main SKILL.md, >= 0 means a sub-file index)
+  const [activeFileIdx, setActiveFileIdx] = useState<number>(-1);
+
+  const [newFilePath, setNewFilePath] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleAddSubFile = () => {
+    const path = newFilePath.trim();
+    if (!path) {
+      toast.error(t('libs.toast.filePathRequired'));
+      return;
+    }
+    if (path === 'SKILL.md') {
+      toast.error(t('libs.toast.skillMdCoreWarn'));
+      return;
+    }
+    if (subFiles.some(f => f.path === path)) {
+      toast.error(t('libs.toast.fileExist'));
+      return;
+    }
+    setSubFiles(prev => [...prev, { path, content: '' }]);
+    setNewFilePath('');
+    setActiveFileIdx(subFiles.length); // Switch to editing the newly added file
+  };
+
+  const handleRemoveSubFile = (idx: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm(t('libs.confirm.deleteSubFile'))) return;
+    setSubFiles(prev => prev.filter((_, i) => i !== idx));
+    if (activeFileIdx === idx) {
+      setActiveFileIdx(-1);
+    } else if (activeFileIdx > idx) {
+      setActiveFileIdx(prev => prev - 1);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      toast.error(t('libs.toast.nameRequired'));
+      return;
+    }
+
+    // Reduce array back to Record<string, string>
+    const filesRecord: Record<string, string> = {};
+    for (const file of subFiles) {
+      const cleanPath = file.path.trim();
+      if (cleanPath) {
+        filesRecord[cleanPath] = file.content;
+      }
+    }
+
+    setSaving(true);
+    try {
+      if (isEdit && skill) {
+        await updateGlobalSkill(skill.id, name.trim(), description.trim(), content, filesRecord);
+        toast.success(t('libs.toast.updateSkillSuccess'));
+      } else {
+        await createGlobalSkill(name.trim(), description.trim(), content, filesRecord);
+        toast.success(t('libs.toast.createSkillSuccess'));
+      }
+      onSave();
+    } catch (e) {
+      toast.error(t('libs.toast.saveFailed') + String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0, 0, 0, 0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={onClose}>
+      <div className="modal-content" style={{ backgroundColor: 'var(--bg-modal, #1c1917)', padding: '24px', borderRadius: 'var(--radius-md, 8px)', border: '1px solid var(--border-subtle, #27272a)', width: '95%', maxWidth: '780px', height: '90vh', maxHeight: '680px', display: 'flex', flexDirection: 'column', gap: '16px' }} onClick={e => e.stopPropagation()}>
+        <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+          {isEdit ? t('libs.modal.editSkill') : t('libs.modal.newSkill')}
+        </h3>
+
+        {/* Name and Description fields */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '12px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{t('libs.modal.skillName')}</label>
+            <input
+              className="input"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="e.g. harnspec"
+              style={{ width: '100%' }}
+            />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{t('libs.modal.skillDesc')}</label>
+            <input
+              className="input"
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              placeholder={t('libs.modal.skillDescPlaceholder')}
+              style={{ width: '100%' }}
+            />
+          </div>
+        </div>
+
+        {/* Split Pane: Left Side (Files list manager), Right Side (Active Editor) */}
+        <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: '16px', border: '1px solid var(--border-subtle, #27272a)', borderRadius: 'var(--radius-sm, 6px)', overflow: 'hidden' }}>
+
+          {/* File Lists sidebar */}
+          <div style={{ width: '220px', borderRight: '1px solid var(--border-subtle, #27272a)', backgroundColor: 'rgba(255,255,255,0.01)', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '8px 10px', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', borderBottom: '1px solid var(--border-subtle, #27272a)' }}>
+              {t('libs.modal.fileStructure')}
+            </div>
+
+            {/* Scrollable file items */}
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', padding: '6px 4px' }}>
+
+              {/* Item: SKILL.md */}
+              <div
+                onClick={() => setActiveFileIdx(-1)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '6px 8px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '0.82rem',
+                  backgroundColor: activeFileIdx === -1 ? 'var(--bg-active, rgba(255,255,255,0.06))' : 'transparent',
+                  color: activeFileIdx === -1 ? 'var(--text-primary, #ffffff)' : 'var(--text-secondary, #a1a1aa)',
+                  fontWeight: activeFileIdx === -1 ? 600 : 400,
+                  marginBottom: '2px'
+                }}
+              >
+                {t('libs.modal.skillMdCore')}
+              </div>
+
+              {/* Other sub-files */}
+              {subFiles.map((file, idx) => (
+                <div
+                  key={file.path}
+                  onClick={() => setActiveFileIdx(idx)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '6px 8px',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontSize: '0.82rem',
+                    backgroundColor: activeFileIdx === idx ? 'var(--bg-active, rgba(255,255,255,0.06))' : 'transparent',
+                    color: activeFileIdx === idx ? 'var(--text-primary, #ffffff)' : 'var(--text-secondary, #a1a1aa)',
+                    fontWeight: activeFileIdx === idx ? 600 : 400,
+                    marginBottom: '2px'
+                  }}
+                >
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={file.path}>
+                    📄 {file.path}
+                  </span>
+                  <span
+                    onClick={(e) => handleRemoveSubFile(idx, e)}
+                    style={{ color: 'var(--accent-red, #ef4444)', fontSize: '0.9rem', padding: '0 4px', cursor: 'pointer' }}
+                    title={t('libs.modal.delete')}
+                  >
+                    ×
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Quick add sub-file form */}
+            <div style={{ padding: '8px', borderTop: '1px solid var(--border-subtle, #27272a)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <input
+                className="input"
+                value={newFilePath}
+                onChange={e => setNewFilePath(e.target.value)}
+                placeholder="references/spec.md"
+                style={{ fontSize: '0.75rem', padding: '4px 6px' }}
+              />
+              <button
+                onClick={handleAddSubFile}
+                className="btn btn-ghost"
+                style={{ fontSize: '0.75rem', padding: '4px 8px', width: '100%' }}
+              >
+                ＋ {t('libs.modal.addSubFile')}
+              </button>
+            </div>
+          </div>
+
+          {/* Active File Content Area */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '12px', minWidth: 0 }}>
+            {activeFileIdx === -1 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>{t('libs.modal.skillEditorTitle')}</label>
+                </div>
+                <textarea
+                  className="input"
+                  value={content}
+                  onChange={e => setContent(e.target.value)}
+                  placeholder="# Skill Specifications..."
+                  style={{ width: '100%', flex: 1, fontFamily: 'monospace', resize: 'none', fontSize: '0.85rem' }}
+                />
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    {t('libs.modal.subFileEditorTitle')}<span style={{ color: 'var(--accent-purple, #9b5de5)', fontFamily: 'monospace' }}>{subFiles[activeFileIdx]?.path}</span>
+                  </label>
+                </div>
+                <textarea
+                  className="input"
+                  value={subFiles[activeFileIdx]?.content ?? ''}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSubFiles(prev => prev.map((f, i) => i === activeFileIdx ? { ...f, content: val } : f));
+                  }}
+                  placeholder="# Nested content..."
+                  style={{ width: '100%', flex: 1, fontFamily: 'monospace', resize: 'none', fontSize: '0.85rem' }}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+          <button className="btn btn-ghost" onClick={onClose}>{t('cat.modal.btn.cancel')}</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+            {saving ? t('libs.modal.saving') : t('libs.modal.saveFolder')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface GlobalDocModalProps {
+  doc?: GlobalDocTemplate;
+  onClose: () => void;
+  onSave: () => void;
+}
+
+function GlobalDocModal({ doc, onClose, onSave }: GlobalDocModalProps) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [alias, setAlias] = useState(doc?.alias ?? '');
+  const [defaultFilename, setDefaultFilename] = useState(doc?.default_filename ?? '');
+  const [content, setContent] = useState(doc?.content ?? '');
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!alias.trim()) {
+      toast.error(t('libs.toast.aliasRequired'));
+      return;
+    }
+    if (!defaultFilename.trim()) {
+      toast.error(t('libs.toast.filenameRequired'));
+      return;
+    }
+    setSaving(true);
+    try {
+      if (doc) {
+        await updateGlobalDoc(doc.id, alias.trim(), defaultFilename.trim(), content);
+        toast.success(t('libs.toast.updateDocSuccess'));
+      } else {
+        await createGlobalDoc(alias.trim(), defaultFilename.trim(), content);
+        toast.success(t('libs.toast.createDocSuccess'));
+      }
+      onSave();
+    } catch (e) {
+      toast.error(t('libs.toast.saveFailed') + String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0, 0, 0, 0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={onClose}>
+      <div className="modal-content" style={{ backgroundColor: 'var(--bg-modal, #1c1917)', padding: '24px', borderRadius: 'var(--radius-md, 8px)', border: '1px solid var(--border-subtle, #27272a)', width: '90%', maxWidth: '500px', display: 'flex', flexDirection: 'column', gap: '16px' }} onClick={e => e.stopPropagation()}>
+        <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+          {doc ? t('libs.modal.editDoc') : t('libs.modal.newDoc')}
+        </h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{t('libs.modal.docAlias')}</label>
+          <input
+            className="input"
+            value={alias}
+            onChange={e => setAlias(e.target.value)}
+            placeholder="e.g. Strict Rule Set (CLAUDE.md)"
+            style={{ width: '100%' }}
+          />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{t('libs.modal.docDefaultFilename')}</label>
+          <input
+            className="input"
+            value={defaultFilename}
+            onChange={e => setDefaultFilename(e.target.value)}
+            placeholder="e.g. CLAUDE.md"
+            style={{ width: '100%' }}
+          />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1, minHeight: 0 }}>
+          <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{t('libs.modal.docContent')}</label>
+          <textarea
+            className="input"
+            value={content}
+            onChange={e => setContent(e.target.value)}
+            placeholder="# Instructions..."
+            style={{ width: '100%', height: '220px', fontFamily: 'monospace', resize: 'vertical' }}
+          />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
+          <button className="btn btn-ghost" onClick={onClose}>{t('cat.modal.btn.cancel')}</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+            {saving ? t('libs.modal.saving') : t('env.btn.save')}
           </button>
         </div>
       </div>

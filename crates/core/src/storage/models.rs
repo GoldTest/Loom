@@ -97,6 +97,24 @@ pub struct AgentInstance {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GlobalSkillTemplate {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub content: String,
+    #[serde(default)]
+    pub files: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GlobalDocTemplate {
+    pub id: String,
+    pub alias: String,
+    pub default_filename: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LoomStorage {
     #[serde(default)]
     pub cli_tools: Vec<CliTool>,
@@ -118,6 +136,10 @@ pub struct LoomStorage {
     pub projects: Vec<Project>,
     #[serde(default)]
     pub agent_instances: Vec<AgentInstance>,
+    #[serde(default)]
+    pub global_skills: Vec<GlobalSkillTemplate>,
+    #[serde(default)]
+    pub global_docs: Vec<GlobalDocTemplate>,
 }
 
 impl Default for LoomStorage {
@@ -133,10 +155,29 @@ impl Default for LoomStorage {
             font_size: default_font_size(),
             projects: Vec::new(),
             agent_instances: Vec::new(),
+            global_skills: Vec::new(),
+            global_docs: Vec::new(),
         }
     }
 }
 
 pub type AppConfig = LoomStorage;
+
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProjectSkill {
+    pub name: String,
+    pub enabled: bool,
+    pub source: String,
+    pub skill_path: String,
+    pub computed_hash: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentDoc {
+    pub relative_path: String,
+    pub absolute_path: PathBuf,
+    pub file_name: String,
+}
 
 

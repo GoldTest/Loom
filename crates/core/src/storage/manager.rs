@@ -1,5 +1,5 @@
 use crate::storage::error::{StorageError, Result};
-use crate::storage::models::{AppConfig, CliTool, Category, Template, LoomStorage, GlobalEnvVar, Project, AgentInstance};
+use crate::storage::models::{AppConfig, CliTool, Category, Template, LoomStorage, GlobalEnvVar, Project, AgentInstance, ProjectSkill, AgentDoc, GlobalSkillTemplate, GlobalDocTemplate};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::env;
@@ -2015,5 +2015,530 @@ pub fn sync_running_processes() -> Result<()> {
     }
     Ok(())
 }
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct LockFileSkill {
+    pub source: String,
+    #[serde(rename = "sourceType")]
+    pub source_type: String,
+    #[serde(rename = "skillPath")]
+    pub skill_path: String,
+    #[serde(rename = "computedHash")]
+    pub computed_hash: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct LockFile {
+    pub version: u32,
+    pub skills: HashMap<String, LockFileSkill>,
+}
+
+pub fn get_project_skills(project_id: String) -> Result<Vec<ProjectSkill>> {
+    let config = load_config()?;
+    let project = config.projects.iter()
+        .find(|p| p.id == project_id)
+        .ok_or_else(|| StorageError::Validation(format!("Project with ID {} not found", project_id)))?;
+
+    let lock_path = project.root_path.join("skills-lock.json");
+    let mut skills_map = HashMap::new();
+
+    if lock_path.exists() {
+        if let Ok(content) = fs::read_to_string(&lock_path) {
+            if let Ok(lock_file) = serde_json::from_str::<LockFile>(&content) {
+                for (name, skill) in lock_file.skills {
+                    skills_map.insert(name.clone(), ProjectSkill {
+                        name,
+                        enabled: false,
+                        source: skill.source,
+                        skill_path: skill.skill_path,
+                        computed_hash: skill.computed_hash,
+                    });
+                }
+            }
+        }
+    }
+
+    // Now scan directory for actually present skills and their active status
+    let skills_dir = project.root_path.join(".agents").join("skills");
+    if skills_dir.exists() && skills_dir.is_dir() {
+        if let Ok(entries) = fs::read_dir(&skills_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    if let Some(name_os) = path.file_name() {
+                        let name = name_os.to_string_lossy().to_string();
+                        let skill_md = path.join("SKILL.md");
+                        let skill_md_disabled = path.join("SKILL.md.disabled");
+
+                        let enabled = skill_md.exists();
+
+                        if let Some(existing) = skills_map.get_mut(&name) {
+                            existing.enabled = enabled;
+                        } else if skill_md.exists() || skill_md_disabled.exists() {
+                            // If it exists on disk but not in lock file, still show it
+                            skills_map.insert(name.clone(), ProjectSkill {
+                                name,
+                                enabled,
+                                source: "".to_string(),
+                                skill_path: "".to_string(),
+                                computed_hash: "".to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut result: Vec<ProjectSkill> = skills_map.into_values().collect();
+    result.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(result)
+}
+
+pub fn toggle_project_skill(project_id: String, skill_name: String, enabled: bool) -> Result<()> {
+    let config = load_config()?;
+    let project = config.projects.iter()
+        .find(|p| p.id == project_id)
+        .ok_or_else(|| StorageError::Validation(format!("Project with ID {} not found", project_id)))?;
+
+    let skills_dir = project.root_path.join(".agents").join("skills").join(&skill_name);
+    if !skills_dir.exists() {
+        return Err(StorageError::Validation(format!("Skill '{}' directory does not exist mapping this project", skill_name)));
+    }
+
+    let skill_md = skills_dir.join("SKILL.md");
+    let skill_md_disabled = skills_dir.join("SKILL.md.disabled");
+
+    if enabled {
+        if skill_md_disabled.exists() {
+            fs::rename(&skill_md_disabled, &skill_md)
+                .map_err(|e| StorageError::Validation(format!("Failed to enable skill: {}", e)))?;
+        } else if !skill_md.exists() {
+            fs::write(&skill_md, format!("# {}\n\nSkill description goes here.", skill_name))
+                .map_err(|e| StorageError::Validation(format!("Failed to create SKILL.md: {}", e)))?;
+        }
+    } else {
+        if skill_md.exists() {
+            fs::rename(&skill_md, &skill_md_disabled)
+                .map_err(|e| StorageError::Validation(format!("Failed to disable skill: {}", e)))?;
+        }
+    }
+
+    Ok(())
+}
+
+pub fn scan_project_agent_docs(project_id: String) -> Result<Vec<AgentDoc>> {
+    let config = load_config()?;
+    let project = config.projects.iter()
+        .find(|p| p.id == project_id)
+        .ok_or_else(|| StorageError::Validation(format!("Project with ID {} not found", project_id)))?;
+
+    let mut docs = Vec::new();
+    let root = &project.root_path;
+
+    fn walk_dir(dir: &Path, root: &Path, docs: &mut Vec<AgentDoc>) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    if let Some(name) = path.file_name() {
+                        let name_str = name.to_string_lossy().to_lowercase();
+                        if name_str == "node_modules" || name_str == "target" || name_str == ".git" || name_str == ".tmp" || name_str == ".backup" {
+                            continue;
+                        }
+                    }
+                    walk_dir(&path, root, docs);
+                } else if path.is_file() {
+                    if let Some(file_name_os) = path.file_name() {
+                        let file_name_lower = file_name_os.to_string_lossy().to_lowercase();
+                        if file_name_lower == "agents.md"
+                            || file_name_lower == "claude.md"
+                            || file_name_lower == "gemini.md"
+                            || file_name_lower == "agents_instructions.md"
+                        {
+                            if let Ok(rel_path) = path.strip_prefix(root) {
+                                let mut rel_str = rel_path.to_string_lossy().replace('\\', "/");
+                                if !rel_str.starts_with("./") {
+                                    rel_str = format!("./{}", rel_str);
+                                }
+                                docs.push(AgentDoc {
+                                    relative_path: rel_str,
+                                    absolute_path: path.clone(),
+                                    file_name: file_name_os.to_string_lossy().to_string(),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    walk_dir(root, root, &mut docs);
+    docs.sort_by(|a, b| a.relative_path.to_lowercase().cmp(&b.relative_path.to_lowercase()));
+    Ok(docs)
+}
+
+pub fn create_project_agent_doc(project_id: String, relative_path: String, doc_type: String) -> Result<AgentDoc> {
+    let config = load_config()?;
+    let project = config.projects.iter()
+        .find(|p| p.id == project_id)
+        .ok_or_else(|| StorageError::Validation(format!("Project with ID {} not found", project_id)))?;
+
+    // Strip manual relative indicators
+    let mut clean_rel = relative_path.replace('\\', "/");
+    if clean_rel.starts_with("./") {
+        clean_rel = clean_rel.split_at(2).1.to_string();
+    }
+    if clean_rel.starts_with('/') {
+        clean_rel = clean_rel.split_at(1).1.to_string();
+    }
+
+    let absolute_path = project.root_path.join(&clean_rel);
+    if absolute_path.exists() {
+        return Err(StorageError::Validation(format!("Document at '{}' already exists", clean_rel)));
+    }
+
+    if let Some(parent) = absolute_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| StorageError::Validation(format!("Failed to create directory structure: {}", e)))?;
+    }
+
+    let file_name = absolute_path.file_name()
+        .ok_or_else(|| StorageError::Validation("Invalid file target path".to_string()))?
+        .to_string_lossy()
+        .to_string();
+
+    let template = match doc_type.to_lowercase().as_str() {
+        "claude" => {
+            "# CLAUDE.md\n\n## Build & Test Commands\n- Build: `cargo build` / `npm run build`\n- Test: `cargo test` / `npm test`\n"
+        }
+        "agents" => {
+            "# AGENTS.md\n\n## Multi-Agent Configuration\nDescribe roles, hierarchies, and rules for agents working on this area of the codebase.\n"
+        }
+        "gemini" => {
+            "# gemini.md\n\n## Gemini Integration Guidelines\nIdentify prompts, system instructions, and schemas tailored for Gemini-based models here.\n"
+        }
+        _ => {
+            "# Agent Instructions\n\n- Custom agent guidelines.\n"
+        }
+    };
+
+    fs::write(&absolute_path, template)
+        .map_err(|e| StorageError::Validation(format!("Failed to write agent document: {}", e)))?;
+
+    let final_rel_str = if clean_rel.starts_with("./") {
+        clean_rel
+    } else {
+        format!("./{}", clean_rel)
+    };
+
+    Ok(AgentDoc {
+        relative_path: final_rel_str,
+        absolute_path,
+        file_name,
+    })
+}
+
+// ─── Global Skills & Document Templates ───────────────────────────────────
+
+pub fn get_global_skills() -> Result<Vec<GlobalSkillTemplate>> {
+    let config = load_config()?;
+    Ok(config.global_skills)
+}
+
+pub fn create_global_skill(name: String, description: String, content: String, files: HashMap<String, String>) -> Result<GlobalSkillTemplate> {
+    let mut config = load_config()?;
+
+    let trimmed_name = name.trim().to_string();
+    if trimmed_name.is_empty() {
+        return Err(StorageError::Validation("Skill name cannot be empty".to_string()));
+    }
+
+    if config.global_skills.iter().any(|s| s.name.eq_ignore_ascii_case(&trimmed_name)) {
+        return Err(StorageError::Validation(format!("Global skill with name '{}' already exists", trimmed_name)));
+    }
+
+    let template = GlobalSkillTemplate {
+        id: Uuid::new_v4().to_string(),
+        name: trimmed_name,
+        description,
+        content,
+        files,
+    };
+
+    config.global_skills.push(template.clone());
+    save_config(&config)?;
+    Ok(template)
+}
+
+pub fn update_global_skill(id: String, name: String, description: String, content: String, files: HashMap<String, String>) -> Result<GlobalSkillTemplate> {
+    let mut config = load_config()?;
+
+    let trimmed_name = name.trim().to_string();
+    if trimmed_name.is_empty() {
+        return Err(StorageError::Validation("Skill name cannot be empty".to_string()));
+    }
+
+    let idx = config.global_skills.iter().position(|s| s.id == id)
+        .ok_or_else(|| StorageError::Validation(format!("Global skill with ID {} not found", id)))?;
+
+    if config.global_skills.iter().enumerate().any(|(i, s)| i != idx && s.name.eq_ignore_ascii_case(&trimmed_name)) {
+        return Err(StorageError::Validation(format!("Global skill with name '{}' already exists", trimmed_name)));
+    }
+
+    let item = &mut config.global_skills[idx];
+    item.name = trimmed_name;
+    item.description = description;
+    item.content = content;
+    item.files = files;
+
+    let updated = item.clone();
+    save_config(&config)?;
+    Ok(updated)
+}
+
+pub fn delete_global_skill(id: String) -> Result<()> {
+    let mut config = load_config()?;
+    let initial_len = config.global_skills.len();
+    config.global_skills.retain(|s| s.id != id);
+
+    if config.global_skills.len() == initial_len {
+        return Err(StorageError::Validation(format!("Global skill with ID {} not found", id)));
+    }
+
+    save_config(&config)?;
+    Ok(())
+}
+
+pub fn get_global_docs() -> Result<Vec<GlobalDocTemplate>> {
+    let config = load_config()?;
+    Ok(config.global_docs)
+}
+
+pub fn create_global_doc(alias: String, default_filename: String, content: String) -> Result<GlobalDocTemplate> {
+    let mut config = load_config()?;
+
+    let trimmed_alias = alias.trim().to_string();
+    if trimmed_alias.is_empty() {
+        return Err(StorageError::Validation("Document template alias cannot be empty".to_string()));
+    }
+
+    if config.global_docs.iter().any(|d| d.alias.eq_ignore_ascii_case(&trimmed_alias)) {
+        return Err(StorageError::Validation(format!("Global doc template with alias '{}' already exists", trimmed_alias)));
+    }
+
+    let template = GlobalDocTemplate {
+        id: Uuid::new_v4().to_string(),
+        alias: trimmed_alias,
+        default_filename: default_filename.trim().to_string(),
+        content,
+    };
+
+    config.global_docs.push(template.clone());
+    save_config(&config)?;
+    Ok(template)
+}
+
+pub fn update_global_doc(id: String, alias: String, default_filename: String, content: String) -> Result<GlobalDocTemplate> {
+    let mut config = load_config()?;
+
+    let trimmed_alias = alias.trim().to_string();
+    if trimmed_alias.is_empty() {
+        return Err(StorageError::Validation("Document template alias cannot be empty".to_string()));
+    }
+
+    let idx = config.global_docs.iter().position(|d| d.id == id)
+        .ok_or_else(|| StorageError::Validation(format!("Global doc template with ID {} not found", id)))?;
+
+    if config.global_docs.iter().enumerate().any(|(i, d)| i != idx && d.alias.eq_ignore_ascii_case(&trimmed_alias)) {
+        return Err(StorageError::Validation(format!("Global doc template with alias '{}' already exists", trimmed_alias)));
+    }
+
+    let item = &mut config.global_docs[idx];
+    item.alias = trimmed_alias;
+    item.default_filename = default_filename.trim().to_string();
+    item.content = content;
+
+    let updated = item.clone();
+    save_config(&config)?;
+    Ok(updated)
+}
+
+pub fn delete_global_doc(id: String) -> Result<()> {
+    let mut config = load_config()?;
+    let initial_len = config.global_docs.len();
+    config.global_docs.retain(|d| d.id != id);
+
+    if config.global_docs.len() == initial_len {
+        return Err(StorageError::Validation(format!("Global doc template with ID {} not found", id)));
+    }
+
+    save_config(&config)?;
+    Ok(())
+}
+
+pub fn import_global_skill_to_project(project_id: String, skill_id: String) -> Result<()> {
+    let config = load_config()?;
+
+    let project = config.projects.iter()
+        .find(|p| p.id == project_id)
+        .ok_or_else(|| StorageError::Validation(format!("Project with ID {} not found", project_id)))?;
+
+    let skill = config.global_skills.iter()
+        .find(|s| s.id == skill_id)
+        .ok_or_else(|| StorageError::Validation(format!("Global skill template with ID {} not found", skill_id)))?;
+
+    let skill_dir = project.root_path.join(".agents").join("skills").join(&skill.name);
+    fs::create_dir_all(&skill_dir)
+        .map_err(|e| StorageError::Validation(format!("Failed to create skill directory: {}", e)))?;
+
+    let skill_md = skill_dir.join("SKILL.md");
+    fs::write(&skill_md, &skill.content)
+        .map_err(|e| StorageError::Validation(format!("Failed to write SKILL.md: {}", e)))?;
+
+    for (rel_path, file_content) in &skill.files {
+        let clean_rel = rel_path.replace('\\', "/");
+        let mut clean_rel_str = clean_rel.as_str();
+        if clean_rel_str.starts_with("./") {
+            clean_rel_str = &clean_rel_str[2..];
+        }
+        if clean_rel_str.starts_with('/') {
+            clean_rel_str = &clean_rel_str[1..];
+        }
+        if clean_rel_str.is_empty() || clean_rel_str.contains("..") {
+            continue;
+        }
+        let target_path = skill_dir.join(clean_rel_str);
+        if let Some(parent) = target_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|e| StorageError::Validation(format!("Failed to create directory structure for skill file: {}", e)))?;
+        }
+        fs::write(&target_path, file_content)
+            .map_err(|e| StorageError::Validation(format!("Failed to write skill file '{}': {}", clean_rel_str, e)))?;
+    }
+
+    Ok(())
+}
+
+pub fn import_global_doc_to_project(project_id: String, doc_id: String, relative_path: String) -> Result<AgentDoc> {
+    let config = load_config()?;
+
+    let project = config.projects.iter()
+        .find(|p| p.id == project_id)
+        .ok_or_else(|| StorageError::Validation(format!("Project with ID {} not found", project_id)))?;
+
+    let doc = config.global_docs.iter()
+        .find(|d| d.id == doc_id)
+        .ok_or_else(|| StorageError::Validation(format!("Global doc template with ID {} not found", doc_id)))?;
+
+    let mut clean_rel = relative_path.replace('\\', "/");
+    if clean_rel.starts_with("./") {
+        clean_rel = clean_rel.split_at(2).1.to_string();
+    }
+    if clean_rel.starts_with('/') {
+        clean_rel = clean_rel.split_at(1).1.to_string();
+    }
+
+    let absolute_path = project.root_path.join(&clean_rel);
+
+    if let Some(parent) = absolute_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| StorageError::Validation(format!("Failed to create directory structure: {}", e)))?;
+    }
+
+    let file_name = absolute_path.file_name()
+        .ok_or_else(|| StorageError::Validation("Invalid file target path".to_string()))?
+        .to_string_lossy()
+        .to_string();
+
+    fs::write(&absolute_path, &doc.content)
+        .map_err(|e| StorageError::Validation(format!("Failed to write document: {}", e)))?;
+
+    let final_rel_str = if clean_rel.starts_with("./") {
+        clean_rel
+    } else {
+        format!("./{}", clean_rel)
+    };
+
+    Ok(AgentDoc {
+        relative_path: final_rel_str,
+        absolute_path,
+        file_name,
+    })
+}
+
+pub fn parse_local_skill_dir(dir_path: &Path) -> Result<GlobalSkillTemplate> {
+    if !dir_path.exists() || !dir_path.is_dir() {
+        return Err(StorageError::Validation("Selected path does not exist or is not a directory".to_string()));
+    }
+
+    let folder_name = dir_path.file_name()
+        .ok_or_else(|| StorageError::Validation("Invalid folder path".to_string()))?
+        .to_string_lossy()
+        .to_string();
+
+    // 1. Find SKILL.md or Skill.md (case-insensitive check)
+    let mut skill_md_path = None;
+    let mut skill_md_name = None;
+    if let Ok(entries) = fs::read_dir(dir_path) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.eq_ignore_ascii_case("skill.md") {
+                skill_md_path = Some(entry.path());
+                skill_md_name = Some(name);
+                break;
+            }
+        }
+    }
+
+    let skill_md_path = skill_md_path.ok_or_else(|| {
+        StorageError::Validation("The directory must contain a 'SKILL.md' or 'Skill.md' file".to_string())
+    })?;
+
+    let content = fs::read_to_string(&skill_md_path)
+        .map_err(|e| StorageError::Validation(format!("Failed to read SKILL.md: {}", e)))?;
+
+    // 2. Recursively read other files
+    let mut files = HashMap::new();
+    let skill_md_name_str = skill_md_name.unwrap_or_else(|| "SKILL.md".to_string());
+
+    fn visit_dirs(dir: &Path, base_dir: &Path, skill_md_name: &str, files: &mut HashMap<String, String>) -> Result<()> {
+        if dir.is_dir() {
+            for entry in fs::read_dir(dir).map_err(|e| StorageError::Validation(e.to_string()))? {
+                let entry = entry.map_err(|e| StorageError::Validation(e.to_string()))?;
+                let path = entry.path();
+                if path.is_dir() {
+                    visit_dirs(&path, base_dir, skill_md_name, files)?;
+                } else {
+                    let file_name = path.file_name().unwrap_or_default().to_string_lossy();
+                    if file_name.eq_ignore_ascii_case(skill_md_name) && path.parent() == Some(base_dir) {
+                        continue;
+                    }
+                    let rel_path = path.strip_prefix(base_dir)
+                        .map_err(|e| StorageError::Validation(e.to_string()))?
+                        .to_string_lossy()
+                        .replace('\\', "/");
+
+                    if let Ok(file_content) = fs::read_to_string(&path) {
+                        files.insert(rel_path, file_content);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    visit_dirs(dir_path, dir_path, &skill_md_name_str, &mut files)?;
+
+    Ok(GlobalSkillTemplate {
+        id: Uuid::new_v4().to_string(),
+        name: folder_name,
+        description: "".to_string(),
+        content,
+        files,
+    })
+}
+
 
 

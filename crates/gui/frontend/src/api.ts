@@ -1,7 +1,7 @@
 // Tauri command wrappers — calls Rust backend via IPC
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import type { CliTool, Category, Template, GlobalEnvVar, LogEvent, StatusEvent, Project, AgentInstance } from './types';
+import type { CliTool, Category, Template, GlobalEnvVar, LogEvent, StatusEvent, Project, AgentInstance, ProjectSkill, AgentDoc } from './types';
 
 // ─── CLI Tools ────────────────────────────────────────────
 export const getCliTools = (): Promise<CliTool[]> =>
@@ -196,6 +196,54 @@ export const selectDirectory = (): Promise<string | null> =>
 export const reorderProjects = (ids: string[]): Promise<void> =>
   invoke('reorder_projects', { ids });
 
+export const getProjectSkills = (projectId: string): Promise<ProjectSkill[]> =>
+  invoke('get_project_skills', { projectId });
+
+export const toggleProjectSkill = (projectId: string, skillName: string, enabled: boolean): Promise<void> =>
+  invoke('toggle_project_skill', { projectId, skillName, enabled });
+
+export const scanProjectAgentDocs = (projectId: string): Promise<AgentDoc[]> =>
+  invoke('scan_project_agent_docs', { projectId });
+
+export const createProjectAgentDoc = (projectId: string, relativePath: string, docType: string): Promise<AgentDoc> =>
+  invoke('create_project_agent_doc', { projectId, relativePath, docType });
+
+// ─── Global Skills & Document Templates IPC ─────────────────
+import type { GlobalSkillTemplate, GlobalDocTemplate } from './types';
+
+export const getGlobalSkills = (): Promise<GlobalSkillTemplate[]> =>
+  invoke('get_global_skills');
+
+export const createGlobalSkill = (name: string, description: string, content: string, files: Record<string, string>): Promise<GlobalSkillTemplate> =>
+  invoke('create_global_skill', { name, description, content, files });
+
+export const updateGlobalSkill = (id: string, name: String, description: string, content: string, files: Record<string, string>): Promise<GlobalSkillTemplate> =>
+  invoke('update_global_skill', { id, name, description, content, files });
+
+export const deleteGlobalSkill = (id: string): Promise<void> =>
+  invoke('delete_global_skill', { id });
+
+export const getGlobalDocs = (): Promise<GlobalDocTemplate[]> =>
+  invoke('get_global_docs');
+
+export const createGlobalDoc = (alias: string, defaultFilename: string, content: string): Promise<GlobalDocTemplate> =>
+  invoke('create_global_doc', { alias, defaultFilename, content });
+
+export const updateGlobalDoc = (id: string, alias: string, defaultFilename: string, content: string): Promise<GlobalDocTemplate> =>
+  invoke('update_global_doc', { id, alias, defaultFilename, content });
+
+export const deleteGlobalDoc = (id: string): Promise<void> =>
+  invoke('delete_global_doc', { id });
+
+export const importGlobalSkillToProject = (projectId: string, skillId: string): Promise<void> =>
+  invoke('import_global_skill_to_project', { projectId, skillId });
+
+export const importGlobalDocToProject = (projectId: string, docId: string, relativePath: string): Promise<AgentDoc> =>
+  invoke('import_global_doc_to_project', { projectId, docId, relativePath });
+
+export const parseLocalSkillDir = (path: string): Promise<GlobalSkillTemplate> =>
+  invoke('parse_local_skill_dir', { path });
+
 // ─── Autostart Configurations ──────────────────────────────
 export const getAutostart = (): Promise<boolean> =>
   invoke('get_autostart');
@@ -216,6 +264,9 @@ export const listProjectFiles = (dirPath: string): Promise<FileEntry[]> =>
 
 export const openFileWithSystem = (filePath: string): Promise<void> =>
   invoke('open_file_with_system', { filePath });
+
+export const deleteFileEntry = (filePath: string, isDir: boolean): Promise<void> =>
+  invoke('delete_file_entry', { filePath, isDir });
 
 export const readTextFile = (filePath: string): Promise<string> =>
   invoke('read_text_file', { filePath });

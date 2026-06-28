@@ -1,6 +1,6 @@
 {
   "productName": "Loom",
-  "version": "0.1.22",
+  "version": "0.2.1",
   "identifier": "com.loom.app",
   "build": {
     "beforeDevCommand": "npm --prefix frontend run dev",
@@ -12,8 +12,8 @@
     "windows": [
       {
         "title": "Loom",
-        "width": 1600,
-        "height": 900,
+        "width": 1024,
+        "height": 768,
         "dragDropEnabled": false
       }
     ]

@@ -9,7 +9,7 @@ use tauri::{
     Manager,
 };
 use loom_core::storage::{
-    CliTool, Category, Template, GlobalEnvVar, Project, AgentInstance,
+    CliTool, Category, Template, GlobalEnvVar, Project, AgentInstance, ProjectSkill, AgentDoc, GlobalSkillTemplate, GlobalDocTemplate,
     get_cli_tools as core_get_cli_tools,
     get_categories as core_get_categories,
     import_cli_tool as core_import_cli_tool,
@@ -53,6 +53,21 @@ use loom_core::storage::{
     sync_running_processes as core_sync_running_processes,
     get_active_instances_list as core_get_active_instances_list,
     read_agent_logs as core_read_agent_logs,
+    get_project_skills as core_get_project_skills,
+    toggle_project_skill as core_toggle_project_skill,
+    scan_project_agent_docs as core_scan_project_agent_docs,
+    create_project_agent_doc as core_create_project_agent_doc,
+    get_global_skills as core_get_global_skills,
+    create_global_skill as core_create_global_skill,
+    update_global_skill as core_update_global_skill,
+    delete_global_skill as core_delete_global_skill,
+    get_global_docs as core_get_global_docs,
+    create_global_doc as core_create_global_doc,
+    update_global_doc as core_update_global_doc,
+    delete_global_doc as core_delete_global_doc,
+    import_global_skill_to_project as core_import_global_skill_to_project,
+    import_global_doc_to_project as core_import_global_doc_to_project,
+    parse_local_skill_dir as core_parse_local_skill_dir,
 };
 
 #[tauri::command]
@@ -581,6 +596,95 @@ fn write_text_file(file_path: String, content: String) -> Result<(), String> {
     std::fs::write(&file_path, content).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn delete_file_entry(file_path: String, is_dir: bool) -> Result<(), String> {
+    let path = std::path::Path::new(&file_path);
+    if !path.exists() {
+        return Err("Path does not exist".to_string());
+    }
+    if is_dir {
+        std::fs::remove_dir_all(path).map_err(|e| e.to_string())
+    } else {
+        std::fs::remove_file(path).map_err(|e| e.to_string())
+    }
+}
+
+#[tauri::command]
+fn get_project_skills(project_id: String) -> Result<Vec<ProjectSkill>, String> {
+    core_get_project_skills(project_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn toggle_project_skill(project_id: String, skill_name: String, enabled: bool) -> Result<(), String> {
+    core_toggle_project_skill(project_id, skill_name, enabled).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn scan_project_agent_docs(project_id: String) -> Result<Vec<AgentDoc>, String> {
+    core_scan_project_agent_docs(project_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn create_project_agent_doc(project_id: String, relative_path: String, doc_type: String) -> Result<AgentDoc, String> {
+    core_create_project_agent_doc(project_id, relative_path, doc_type).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_global_skills() -> Result<Vec<GlobalSkillTemplate>, String> {
+    core_get_global_skills().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn create_global_skill(name: String, description: String, content: String, files: HashMap<String, String>) -> Result<GlobalSkillTemplate, String> {
+    core_create_global_skill(name, description, content, files).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn update_global_skill(id: String, name: String, description: String, content: String, files: HashMap<String, String>) -> Result<GlobalSkillTemplate, String> {
+    core_update_global_skill(id, name, description, content, files).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_global_skill(id: String) -> Result<(), String> {
+    core_delete_global_skill(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_global_docs() -> Result<Vec<GlobalDocTemplate>, String> {
+    core_get_global_docs().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn create_global_doc(alias: String, default_filename: String, content: String) -> Result<GlobalDocTemplate, String> {
+    core_create_global_doc(alias, default_filename, content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn update_global_doc(id: String, alias: String, default_filename: String, content: String) -> Result<GlobalDocTemplate, String> {
+    core_update_global_doc(id, alias, default_filename, content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_global_doc(id: String) -> Result<(), String> {
+    core_delete_global_doc(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn import_global_skill_to_project(project_id: String, skill_id: String) -> Result<(), String> {
+    core_import_global_skill_to_project(project_id, skill_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn import_global_doc_to_project(project_id: String, doc_id: String, relative_path: String) -> Result<AgentDoc, String> {
+    core_import_global_doc_to_project(project_id, doc_id, relative_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn parse_local_skill_dir(path: String) -> Result<GlobalSkillTemplate, String> {
+    let dir_path = std::path::Path::new(&path);
+    core_parse_local_skill_dir(dir_path).map_err(|e| e.to_string())
+}
+
 
 
 fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
@@ -927,6 +1031,22 @@ fn log_frontend(level: String, message: String) {
 
 mod pty;
 
+fn get_window_state_path() -> std::path::PathBuf {
+    let mut path = loom_core::storage::get_config_path();
+    path.pop();
+    path.join("window_state.json")
+}
+
+fn save_window_state(window: &tauri::Window) {
+    if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
+        #[derive(serde::Serialize)]
+        struct WinState { x: i32, y: i32, width: u32, height: u32 }
+        if let Ok(json) = serde_json::to_string_pretty(&WinState { x: pos.x, y: pos.y, width: size.width, height: size.height }) {
+            let _ = std::fs::write(get_window_state_path(), json);
+        }
+    }
+}
+
 fn main() {
     #[cfg(target_os = "windows")]
     pty::init_process_session_job();
@@ -960,6 +1080,31 @@ fn main() {
     builder
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--minimized"])))
         .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                let state_path = get_window_state_path();
+                let has_state = state_path.exists()
+                    && std::fs::read_to_string(&state_path).ok()
+                        .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+                        .is_some();
+                if has_state {
+                    let content = std::fs::read_to_string(&state_path).unwrap();
+                    #[derive(serde::Deserialize)]
+                    struct WinState { x: i32, y: i32, width: u32, height: u32 }
+                    if let Ok(state) = serde_json::from_str::<WinState>(&content) {
+                        let _ = window.set_size(tauri::PhysicalSize::new(state.width, state.height));
+                        let _ = window.set_position(tauri::PhysicalPosition::new(state.x, state.y));
+                    }
+                } else {
+                    if let Some(monitor) = window.current_monitor().unwrap_or(None) {
+                        let size = monitor.size();
+                        let w = (size.width as f64 * 0.625) as u32;
+                        let h = (size.height as f64 * 0.764) as u32;
+                        let _ = window.set_size(tauri::PhysicalSize::new(w, h));
+                    }
+                    let _ = window.center();
+                }
+            }
+
             // Run process synchronization in a background thread to prevent blocking Tauri's main startup thread (which causes the white screen freeze).
             std::thread::spawn(|| {
                 let _ = core_sync_running_processes();
@@ -1006,9 +1151,16 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+            match event {
+                tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_) => {
+                    save_window_state(&window);
+                }
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    save_window_state(&window);
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -1064,6 +1216,22 @@ fn main() {
             open_file_with_system,
             read_text_file,
             write_text_file,
+            delete_file_entry,
+            get_project_skills,
+            toggle_project_skill,
+            scan_project_agent_docs,
+            create_project_agent_doc,
+            get_global_skills,
+            create_global_skill,
+            update_global_skill,
+            delete_global_skill,
+            get_global_docs,
+            create_global_doc,
+            update_global_doc,
+            delete_global_doc,
+            import_global_skill_to_project,
+            import_global_doc_to_project,
+            parse_local_skill_dir,
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,

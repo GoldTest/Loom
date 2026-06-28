@@ -74,6 +74,35 @@ export interface Project {
   quick_commands: Template[];
 }
 
+export interface ProjectSkill {
+  name: string;
+  enabled: boolean;
+  source: string;
+  skill_path: string;
+  computed_hash: string;
+}
+
+export interface AgentDoc {
+  relative_path: string;
+  absolute_path: string;
+  file_name: string;
+}
+
+export interface GlobalSkillTemplate {
+  id: string;
+  name: string;
+  description: string;
+  content: string;
+  files: Record<string, string>;
+}
+
+export interface GlobalDocTemplate {
+  id: string;
+  alias: string;
+  default_filename: string;
+  content: string;
+}
+
 export interface AgentInstance {
   id: string;
   project_id: string;
