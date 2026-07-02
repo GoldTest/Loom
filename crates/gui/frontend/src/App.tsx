@@ -17,7 +17,6 @@ import {
   selectDirectory,
   reorderProjects
 } from './api';
-import logoIcon from './assets/logo.png';
 import type { Category, Project } from './types';
 
 type Page = 'workspace' | 'settings';
@@ -390,15 +389,6 @@ function App() {
     <div className="app-shell">
       {/* ── Sidebar ─────────────────────────────────────── */}
       <aside className="sidebar" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        
-        {/* Logo and Header */}
-        <div className="sidebar-logo" style={{ padding: '0 8px 16px', borderBottom: 'none' }}>
-          <img src={logoIcon} style={{ width: 32, height: 32, borderRadius: 'var(--radius-sm)', objectFit: 'contain' }} alt="Loom" />
-          <div style={{ flexGrow: 1 }}>
-            <div className="sidebar-logo-text">Loom</div>
-            <div className="sidebar-logo-badge" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100px' }} title={t('nav.logoSubtitle')}>{t('nav.logoSubtitle')}</div>
-          </div>
-        </div>
 
         {/* Project Selector List */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', overflowY: 'auto', flexGrow: 1, marginTop: '8px', paddingBottom: '4px' }}>

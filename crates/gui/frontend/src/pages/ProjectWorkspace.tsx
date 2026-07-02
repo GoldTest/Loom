@@ -1240,7 +1240,8 @@ export default function ProjectWorkspace({ project, isVisible, onUnregisterProje
           flex: 1,
           minHeight: 0,
           paddingRight: '6px',
-          paddingBottom: '6px',
+          paddingBottom: '16px',
+          backgroundColor: '#121214',
           boxSizing: 'border-box',
           display: (showGrid || terminals.some(t => t.id === activeTabId)) ? 'flex' : 'none'
         }}>
