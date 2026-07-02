@@ -515,7 +515,7 @@ export function TerminalTab({ sessionId, cwd, command, args, env, isVisible }: T
         width: '100%',
         height: '100%',
         backgroundColor: '#121214',
-        padding: '4px',
+        padding: '4px 4px 28px 4px',
         margin: '0px',
         overflow: 'hidden',
         position: 'relative',
