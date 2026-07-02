@@ -1,76 +1,55 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use loom_core::storage::{
+    assign_cli_category as core_assign_cli_category, create_category as core_create_category,
+    create_global_doc as core_create_global_doc,
+    create_global_env_var as core_create_global_env_var,
+    create_global_skill as core_create_global_skill, create_project as core_create_project,
+    create_project_agent_doc as core_create_project_agent_doc,
+    create_template as core_create_template, delete_category as core_delete_category,
+    delete_cli_tool as core_delete_cli_tool, delete_global_doc as core_delete_global_doc,
+    delete_global_env_var as core_delete_global_env_var,
+    delete_global_skill as core_delete_global_skill, delete_project as core_delete_project,
+    delete_template as core_delete_template, get_active_instances as core_get_active_instances,
+    get_active_instances_list as core_get_active_instances_list,
+    get_autostart_enabled as core_get_autostart_enabled, get_categories as core_get_categories,
+    get_cli_tools as core_get_cli_tools, get_font_family as core_get_font_family,
+    get_font_size as core_get_font_size, get_global_docs as core_get_global_docs,
+    get_global_env_vars as core_get_global_env_vars, get_global_skills as core_get_global_skills,
+    get_language as core_get_language, get_project_agents as core_get_project_agents,
+    get_project_skills as core_get_project_skills, get_projects as core_get_projects,
+    get_skipped_version as core_get_skipped_version, get_templates as core_get_templates,
+    get_theme as core_get_theme, import_cli_tool as core_import_cli_tool,
+    import_global_doc_to_project as core_import_global_doc_to_project,
+    import_global_skill_to_project as core_import_global_skill_to_project,
+    kill_cli_instance as core_kill_cli_instance,
+    parse_local_skill_dir as core_parse_local_skill_dir, read_agent_logs as core_read_agent_logs,
+    reorder_cli_tools as core_reorder_cli_tools, reorder_projects as core_reorder_projects,
+    reorder_templates as core_reorder_templates, run_cli_template as core_run_cli_template,
+    scan_directory as core_scan_directory, scan_path_env as core_scan_path_env,
+    scan_project_agent_docs as core_scan_project_agent_docs,
+    set_autostart_enabled as core_set_autostart_enabled, set_font_family as core_set_font_family,
+    set_font_size as core_set_font_size, set_language as core_set_language,
+    set_skipped_version as core_set_skipped_version, set_theme as core_set_theme,
+    smart_classify as core_smart_classify, spawn_project_agent as core_spawn_project_agent,
+    sync_running_processes as core_sync_running_processes,
+    toggle_project_skill as core_toggle_project_skill, update_category as core_update_category,
+    update_cli_args as core_update_cli_args, update_cli_env as core_update_cli_env,
+    update_global_doc as core_update_global_doc,
+    update_global_env_var as core_update_global_env_var,
+    update_global_skill as core_update_global_skill, update_template as core_update_template,
+    AgentDoc, AgentInstance, Category, CliTool, GlobalDocTemplate, GlobalEnvVar,
+    GlobalSkillTemplate, Project, ProjectSkill, Template,
+};
 use std::collections::HashMap;
-use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri::{
     image::Image,
     menu::{MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager,
 };
-use loom_core::storage::{
-    CliTool, Category, Template, GlobalEnvVar, Project, AgentInstance, ProjectSkill, AgentDoc, GlobalSkillTemplate, GlobalDocTemplate,
-    get_cli_tools as core_get_cli_tools,
-    get_categories as core_get_categories,
-    import_cli_tool as core_import_cli_tool,
-    scan_path_env as core_scan_path_env,
-    scan_directory as core_scan_directory,
-    create_category as core_create_category,
-    assign_cli_category as core_assign_cli_category,
-    update_cli_env as core_update_cli_env,
-    update_cli_args as core_update_cli_args,
-    create_template as core_create_template,
-    get_templates as core_get_templates,
-    delete_template as core_delete_template,
-    update_template as core_update_template,
-    reorder_templates as core_reorder_templates,
-    delete_cli_tool as core_delete_cli_tool,
-    delete_category as core_delete_category,
-    run_cli_template as core_run_cli_template,
-    kill_cli_instance as core_kill_cli_instance,
-    get_active_instances as core_get_active_instances,
-    get_language as core_get_language,
-    set_language as core_set_language,
-    get_theme as core_get_theme,
-    set_theme as core_set_theme,
-    get_global_env_vars as core_get_global_env_vars,
-    create_global_env_var as core_create_global_env_var,
-    update_global_env_var as core_update_global_env_var,
-    delete_global_env_var as core_delete_global_env_var,
-    update_category as core_update_category,
-    smart_classify as core_smart_classify,
-    get_font_family as core_get_font_family,
-    set_font_family as core_set_font_family,
-    get_font_size as core_get_font_size,
-    set_font_size as core_set_font_size,
-    get_projects as core_get_projects,
-    create_project as core_create_project,
-    delete_project as core_delete_project,
-    reorder_projects as core_reorder_projects,
-    reorder_cli_tools as core_reorder_cli_tools,
-    get_project_agents as core_get_project_agents,
-    spawn_project_agent as core_spawn_project_agent,
-    sync_running_processes as core_sync_running_processes,
-    get_active_instances_list as core_get_active_instances_list,
-    read_agent_logs as core_read_agent_logs,
-    get_project_skills as core_get_project_skills,
-    toggle_project_skill as core_toggle_project_skill,
-    scan_project_agent_docs as core_scan_project_agent_docs,
-    create_project_agent_doc as core_create_project_agent_doc,
-    get_global_skills as core_get_global_skills,
-    create_global_skill as core_create_global_skill,
-    update_global_skill as core_update_global_skill,
-    delete_global_skill as core_delete_global_skill,
-    get_global_docs as core_get_global_docs,
-    create_global_doc as core_create_global_doc,
-    update_global_doc as core_update_global_doc,
-    delete_global_doc as core_delete_global_doc,
-    import_global_skill_to_project as core_import_global_skill_to_project,
-    import_global_doc_to_project as core_import_global_doc_to_project,
-    parse_local_skill_dir as core_parse_local_skill_dir,
-    get_autostart_enabled as core_get_autostart_enabled,
-    set_autostart_enabled as core_set_autostart_enabled,
-};
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
+use tauri_plugin_updater::UpdaterExt;
 
 #[tauri::command]
 fn update_ime_position(
@@ -143,7 +122,17 @@ fn create_template(
     cmd_override: Option<String>,
     env_mode: Option<String>,
 ) -> Result<Template, String> {
-    core_create_template(cli_id, name, args, env, env_var_ids, pwd, cmd_override, env_mode).map_err(|e| e.to_string())
+    core_create_template(
+        cli_id,
+        name,
+        args,
+        env,
+        env_var_ids,
+        pwd,
+        cmd_override,
+        env_mode,
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -167,7 +156,17 @@ fn update_template(
     cmd_override: Option<String>,
     env_mode: Option<String>,
 ) -> Result<Template, String> {
-    core_update_template(template_id, name, args, env, env_var_ids, pwd, cmd_override, env_mode).map_err(|e| e.to_string())
+    core_update_template(
+        template_id,
+        name,
+        args,
+        env,
+        env_var_ids,
+        pwd,
+        cmd_override,
+        env_mode,
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -176,12 +175,21 @@ fn get_global_env_vars() -> Result<Vec<GlobalEnvVar>, String> {
 }
 
 #[tauri::command]
-fn create_global_env_var(key: String, value: String, description: String) -> Result<GlobalEnvVar, String> {
+fn create_global_env_var(
+    key: String,
+    value: String,
+    description: String,
+) -> Result<GlobalEnvVar, String> {
     core_create_global_env_var(key, value, description).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn update_global_env_var(id: String, key: String, value: String, description: String) -> Result<GlobalEnvVar, String> {
+fn update_global_env_var(
+    id: String,
+    key: String,
+    value: String,
+    description: String,
+) -> Result<GlobalEnvVar, String> {
     core_update_global_env_var(id, key, value, description).map_err(|e| e.to_string())
 }
 
@@ -263,16 +271,22 @@ fn open_url(url: String) -> Result<(), String> {
 #[tauri::command]
 fn get_autostart(app: tauri::AppHandle) -> Result<bool, String> {
     let autostart_manager = app.autolaunch();
-    autostart_manager.is_enabled().map_err(|e: tauri_plugin_autostart::Error| e.to_string())
+    autostart_manager
+        .is_enabled()
+        .map_err(|e: tauri_plugin_autostart::Error| e.to_string())
 }
 
 #[tauri::command]
 fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     let autostart_manager = app.autolaunch();
     if enabled {
-        autostart_manager.enable().map_err(|e: tauri_plugin_autostart::Error| e.to_string())?;
+        autostart_manager
+            .enable()
+            .map_err(|e: tauri_plugin_autostart::Error| e.to_string())?;
     } else {
-        autostart_manager.disable().map_err(|e: tauri_plugin_autostart::Error| e.to_string())?;
+        autostart_manager
+            .disable()
+            .map_err(|e: tauri_plugin_autostart::Error| e.to_string())?;
     }
     core_set_autostart_enabled(enabled).map_err(|e| e.to_string())?;
     Ok(())
@@ -362,7 +376,16 @@ fn spawn_project_agent(
     let on_event = std::sync::Arc::new(move |event_name: String, payload: serde_json::Value| {
         let _ = app_handle.emit(&event_name, payload);
     });
-    core_spawn_project_agent(project_id, command, args, env_mode, custom_envs, pwd, Some(on_event)).map_err(|e| e.to_string())
+    core_spawn_project_agent(
+        project_id,
+        command,
+        args,
+        env_mode,
+        custom_envs,
+        pwd,
+        Some(on_event),
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[cfg(target_os = "windows")]
@@ -377,7 +400,10 @@ mod win_util {
     #[link(name = "user32")]
     extern "system" {
         fn GetWindowThreadProcessId(hwnd: *mut c_void, lpdwProcessId: *mut u32) -> u32;
-        fn EnumWindows(lpEnumFunc: unsafe extern "system" fn(*mut c_void, isize) -> i32, lParam: isize) -> i32;
+        fn EnumWindows(
+            lpEnumFunc: unsafe extern "system" fn(*mut c_void, isize) -> i32,
+            lParam: isize,
+        ) -> i32;
         fn SetForegroundWindow(hwnd: *mut c_void) -> i32;
         fn ShowWindow(hwnd: *mut c_void, nCmdShow: i32) -> i32;
         fn IsIconic(hwnd: *mut c_void) -> i32;
@@ -387,13 +413,18 @@ mod win_util {
     }
 
     #[allow(non_snake_case)]
-    unsafe extern "system" fn enum_windows_callback_strict(hwnd: *mut c_void, lParam: isize) -> i32 {
+    unsafe extern "system" fn enum_windows_callback_strict(
+        hwnd: *mut c_void,
+        lParam: isize,
+    ) -> i32 {
         let data = &mut *(lParam as *mut EnumData);
         let mut process_id = 0;
-        GetWindowThreadProcessId(hwnd, &mut process_id);
+        unsafe {
+            GetWindowThreadProcessId(hwnd, &mut process_id);
+        }
         if process_id == data.pid {
-            let has_no_owner = GetWindow(hwnd, 4).is_null(); // GW_OWNER = 4
-            let is_visible_or_iconic = IsWindowVisible(hwnd) != 0 || IsIconic(hwnd) != 0;
+            let has_no_owner = unsafe { GetWindow(hwnd, 4).is_null() }; // GW_OWNER = 4
+            let is_visible_or_iconic = unsafe { IsWindowVisible(hwnd) != 0 || IsIconic(hwnd) != 0 };
             if has_no_owner && is_visible_or_iconic {
                 data.hwnd = Some(hwnd);
                 return 0; // stop enumeration
@@ -403,15 +434,20 @@ mod win_util {
     }
 
     #[allow(non_snake_case)]
-    unsafe extern "system" fn enum_windows_callback_fallback(hwnd: *mut c_void, lParam: isize) -> i32 {
+    unsafe extern "system" fn enum_windows_callback_fallback(
+        hwnd: *mut c_void,
+        lParam: isize,
+    ) -> i32 {
         let data = &mut *(lParam as *mut EnumData);
         let mut process_id = 0;
-        GetWindowThreadProcessId(hwnd, &mut process_id);
+        unsafe {
+            GetWindowThreadProcessId(hwnd, &mut process_id);
+        }
         if process_id == data.pid {
-            if data.hwnd.is_none() || IsWindowVisible(hwnd) != 0 {
+            if data.hwnd.is_none() || unsafe { IsWindowVisible(hwnd) != 0 } {
                 data.hwnd = Some(hwnd);
             }
-            if IsWindowVisible(hwnd) != 0 {
+            if unsafe { IsWindowVisible(hwnd) != 0 } {
                 return 0; // stop enumeration
             }
         }
@@ -419,17 +455,20 @@ mod win_util {
     }
 
     pub fn bring_pid_to_foreground(pid: u32) -> bool {
-        let mut data = EnumData {
-            pid,
-            hwnd: None,
-        };
+        let mut data = EnumData { pid, hwnd: None };
         unsafe {
             // First try strict check to get the main window
-            EnumWindows(enum_windows_callback_strict, &mut data as *mut EnumData as isize);
-            
+            EnumWindows(
+                enum_windows_callback_strict,
+                &mut data as *mut EnumData as isize,
+            );
+
             // If not found, try fallback check
             if data.hwnd.is_none() {
-                EnumWindows(enum_windows_callback_fallback, &mut data as *mut EnumData as isize);
+                EnumWindows(
+                    enum_windows_callback_fallback,
+                    &mut data as *mut EnumData as isize,
+                );
             }
 
             if let Some(hwnd) = data.hwnd {
@@ -518,8 +557,8 @@ fn list_project_files(dir_path: String) -> Result<Vec<FileEntry>, String> {
         return Err("Path is not a directory".to_string());
     }
 
-    let entries = std::fs::read_dir(path)
-        .map_err(|e| format!("Failed to read directory: {}", e))?;
+    let entries =
+        std::fs::read_dir(path).map_err(|e| format!("Failed to read directory: {}", e))?;
 
     let mut file_entries = Vec::new();
     for entry in entries {
@@ -529,7 +568,7 @@ fn list_project_files(dir_path: String) -> Result<Vec<FileEntry>, String> {
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
-            
+
             if name.is_empty() || name == "." || name == ".." {
                 continue;
             }
@@ -540,7 +579,7 @@ fn list_project_files(dir_path: String) -> Result<Vec<FileEntry>, String> {
             } else {
                 entry.metadata().map(|m| m.len()).unwrap_or(0)
             };
-            
+
             file_entries.push(FileEntry {
                 name,
                 path: file_path.to_string_lossy().to_string(),
@@ -574,9 +613,7 @@ fn open_file_with_system(file_path: String) -> Result<(), String> {
         .status();
 
     #[cfg(target_os = "macos")]
-    let res = std::process::Command::new("open")
-        .arg(&file_path)
-        .status();
+    let res = std::process::Command::new("open").arg(&file_path).status();
 
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     let res = std::process::Command::new("xdg-open")
@@ -660,7 +697,11 @@ fn get_project_skills(project_id: String) -> Result<Vec<ProjectSkill>, String> {
 }
 
 #[tauri::command]
-fn toggle_project_skill(project_id: String, skill_name: String, enabled: bool) -> Result<(), String> {
+fn toggle_project_skill(
+    project_id: String,
+    skill_name: String,
+    enabled: bool,
+) -> Result<(), String> {
     core_toggle_project_skill(project_id, skill_name, enabled).map_err(|e| e.to_string())
 }
 
@@ -670,7 +711,11 @@ fn scan_project_agent_docs(project_id: String) -> Result<Vec<AgentDoc>, String> 
 }
 
 #[tauri::command]
-fn create_project_agent_doc(project_id: String, relative_path: String, doc_type: String) -> Result<AgentDoc, String> {
+fn create_project_agent_doc(
+    project_id: String,
+    relative_path: String,
+    doc_type: String,
+) -> Result<AgentDoc, String> {
     core_create_project_agent_doc(project_id, relative_path, doc_type).map_err(|e| e.to_string())
 }
 
@@ -680,12 +725,23 @@ fn get_global_skills() -> Result<Vec<GlobalSkillTemplate>, String> {
 }
 
 #[tauri::command]
-fn create_global_skill(name: String, description: String, content: String, files: HashMap<String, String>) -> Result<GlobalSkillTemplate, String> {
+fn create_global_skill(
+    name: String,
+    description: String,
+    content: String,
+    files: HashMap<String, String>,
+) -> Result<GlobalSkillTemplate, String> {
     core_create_global_skill(name, description, content, files).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn update_global_skill(id: String, name: String, description: String, content: String, files: HashMap<String, String>) -> Result<GlobalSkillTemplate, String> {
+fn update_global_skill(
+    id: String,
+    name: String,
+    description: String,
+    content: String,
+    files: HashMap<String, String>,
+) -> Result<GlobalSkillTemplate, String> {
     core_update_global_skill(id, name, description, content, files).map_err(|e| e.to_string())
 }
 
@@ -700,12 +756,21 @@ fn get_global_docs() -> Result<Vec<GlobalDocTemplate>, String> {
 }
 
 #[tauri::command]
-fn create_global_doc(alias: String, default_filename: String, content: String) -> Result<GlobalDocTemplate, String> {
+fn create_global_doc(
+    alias: String,
+    default_filename: String,
+    content: String,
+) -> Result<GlobalDocTemplate, String> {
     core_create_global_doc(alias, default_filename, content).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn update_global_doc(id: String, alias: String, default_filename: String, content: String) -> Result<GlobalDocTemplate, String> {
+fn update_global_doc(
+    id: String,
+    alias: String,
+    default_filename: String,
+    content: String,
+) -> Result<GlobalDocTemplate, String> {
     core_update_global_doc(id, alias, default_filename, content).map_err(|e| e.to_string())
 }
 
@@ -720,7 +785,11 @@ fn import_global_skill_to_project(project_id: String, skill_id: String) -> Resul
 }
 
 #[tauri::command]
-fn import_global_doc_to_project(project_id: String, doc_id: String, relative_path: String) -> Result<AgentDoc, String> {
+fn import_global_doc_to_project(
+    project_id: String,
+    doc_id: String,
+    relative_path: String,
+) -> Result<AgentDoc, String> {
     core_import_global_doc_to_project(project_id, doc_id, relative_path).map_err(|e| e.to_string())
 }
 
@@ -729,8 +798,6 @@ fn parse_local_skill_dir(path: String) -> Result<GlobalSkillTemplate, String> {
     let dir_path = std::path::Path::new(&path);
     core_parse_local_skill_dir(dir_path).map_err(|e| e.to_string())
 }
-
-
 
 fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
     let args: serde_json::Value = serde_json::from_str(args_json)
@@ -742,7 +809,8 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "import_cli_tool" => {
-            let path = args["path"].as_str()
+            let path = args["path"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'path'".to_string())?;
             let res = import_cli_tool(path.to_string())?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
@@ -752,54 +820,71 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "scan_directory" => {
-            let path = args["path"].as_str()
+            let path = args["path"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'path'".to_string())?;
             let res = scan_directory(path.to_string())?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "create_category" => {
-            let name = args["name"].as_str()
+            let name = args["name"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'name'".to_string())?;
             let desc = args["desc"].as_str().unwrap_or("");
             let res = create_category(name.to_string(), desc.to_string())?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "assign_cli_category" => {
-            let cli_id = args["cli_id"].as_str()
+            let cli_id = args["cli_id"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'cli_id'".to_string())?;
             let cat_id = args["cat_id"].as_str().map(|s| s.to_string());
             assign_cli_category(cli_id.to_string(), cat_id)?;
             Ok("null".to_string())
         }
         "update_cli_env" => {
-            let cli_id = args["cli_id"].as_str()
+            let cli_id = args["cli_id"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'cli_id'".to_string())?;
-            let env_obj = args["env"].as_object()
+            let env_obj = args["env"]
+                .as_object()
                 .ok_or_else(|| "Missing or invalid argument 'env'".to_string())?;
             let mut env = HashMap::new();
             for (k, v) in env_obj {
-                let v_str = v.as_str().ok_or_else(|| "Env value must be a string".to_string())?;
+                let v_str = v
+                    .as_str()
+                    .ok_or_else(|| "Env value must be a string".to_string())?;
                 env.insert(k.clone(), v_str.to_string());
             }
             update_cli_env(cli_id.to_string(), env)?;
             Ok("null".to_string())
         }
         "create_template" => {
-            let cli_id = args["cli_id"].as_str()
+            let cli_id = args["cli_id"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'cli_id'".to_string())?;
-            let name = args["name"].as_str()
+            let name = args["name"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'name'".to_string())?;
-            let args_arr = args["args"].as_array()
+            let args_arr = args["args"]
+                .as_array()
                 .ok_or_else(|| "Missing or invalid argument 'args'".to_string())?;
             let mut cmd_args = Vec::new();
             for a in args_arr {
-                cmd_args.push(a.as_str().ok_or_else(|| "Arg must be a string".to_string())?.to_string());
+                cmd_args.push(
+                    a.as_str()
+                        .ok_or_else(|| "Arg must be a string".to_string())?
+                        .to_string(),
+                );
             }
-            let env_obj = args["env"].as_object()
+            let env_obj = args["env"]
+                .as_object()
                 .ok_or_else(|| "Missing or invalid argument 'env'".to_string())?;
             let mut env = HashMap::new();
             for (k, v) in env_obj {
-                let v_str = v.as_str().ok_or_else(|| "Env value must be a string".to_string())?;
+                let v_str = v
+                    .as_str()
+                    .ok_or_else(|| "Env value must be a string".to_string())?;
                 env.insert(k.clone(), v_str.to_string());
             }
             let mut env_var_ids = Vec::new();
@@ -812,8 +897,21 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             }
             let pwd = args["pwd"].as_str().map(|s| s.to_string());
             let cmd_override = args["cmd_override"].as_str().map(|s| s.to_string());
-            let env_mode = args.get("env_mode").and_then(|v| v.as_str()).map(|s| s.to_string());
-            let res = core_create_template(cli_id.to_string(), name.to_string(), cmd_args, env, env_var_ids, pwd, cmd_override, env_mode).map_err(|e| e.to_string())?;
+            let env_mode = args
+                .get("env_mode")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let res = core_create_template(
+                cli_id.to_string(),
+                name.to_string(),
+                cmd_args,
+                env,
+                env_var_ids,
+                pwd,
+                cmd_override,
+                env_mode,
+            )
+            .map_err(|e| e.to_string())?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "get_templates" => {
@@ -821,27 +919,38 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "delete_template" => {
-            let template_id = args["template_id"].as_str()
+            let template_id = args["template_id"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'template_id'".to_string())?;
             delete_template(template_id.to_string())?;
             Ok("null".to_string())
         }
         "update_template" => {
-            let template_id = args["template_id"].as_str()
+            let template_id = args["template_id"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'template_id'".to_string())?;
-            let name = args["name"].as_str()
+            let name = args["name"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'name'".to_string())?;
-            let args_arr = args["args"].as_array()
+            let args_arr = args["args"]
+                .as_array()
                 .ok_or_else(|| "Missing or invalid argument 'args'".to_string())?;
             let mut cmd_args = Vec::new();
             for a in args_arr {
-                cmd_args.push(a.as_str().ok_or_else(|| "Arg must be a string".to_string())?.to_string());
+                cmd_args.push(
+                    a.as_str()
+                        .ok_or_else(|| "Arg must be a string".to_string())?
+                        .to_string(),
+                );
             }
-            let env_obj = args["env"].as_object()
+            let env_obj = args["env"]
+                .as_object()
                 .ok_or_else(|| "Missing or invalid argument 'env'".to_string())?;
             let mut env = HashMap::new();
             for (k, v) in env_obj {
-                let v_str = v.as_str().ok_or_else(|| "Env value must be a string".to_string())?;
+                let v_str = v
+                    .as_str()
+                    .ok_or_else(|| "Env value must be a string".to_string())?;
                 env.insert(k.clone(), v_str.to_string());
             }
             let mut env_var_ids = Vec::new();
@@ -854,29 +963,50 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             }
             let pwd = args["pwd"].as_str().map(|s| s.to_string());
             let cmd_override = args["cmd_override"].as_str().map(|s| s.to_string());
-            let env_mode = args.get("env_mode").and_then(|v| v.as_str()).map(|s| s.to_string());
-            let res = core_update_template(template_id.to_string(), name.to_string(), cmd_args, env, env_var_ids, pwd, cmd_override, env_mode).map_err(|e| e.to_string())?;
+            let env_mode = args
+                .get("env_mode")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let res = core_update_template(
+                template_id.to_string(),
+                name.to_string(),
+                cmd_args,
+                env,
+                env_var_ids,
+                pwd,
+                cmd_override,
+                env_mode,
+            )
+            .map_err(|e| e.to_string())?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "delete_cli_tool" => {
-            let cli_id = args["cli_id"].as_str()
+            let cli_id = args["cli_id"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'cli_id'".to_string())?;
             delete_cli_tool(cli_id.to_string())?;
             Ok("null".to_string())
         }
         "delete_category" => {
-            let cat_id = args["cat_id"].as_str()
+            let cat_id = args["cat_id"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'cat_id'".to_string())?;
             delete_category(cat_id.to_string())?;
             Ok("null".to_string())
         }
         "run_cli_template" => {
-            let template_id = args["template_id"].as_str()
+            let template_id = args["template_id"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'template_id'".to_string())?;
-            let instance_id = core_run_cli_template(template_id.to_string(), None).map_err(|e| e.to_string())?;
+            let instance_id =
+                core_run_cli_template(template_id.to_string(), None).map_err(|e| e.to_string())?;
             println!("INSTANCE_ID: {}", instance_id);
 
-            let child_arc_opt = core_get_active_instances().lock().unwrap().get(&instance_id).cloned();
+            let child_arc_opt = core_get_active_instances()
+                .lock()
+                .unwrap()
+                .get(&instance_id)
+                .cloned();
             if let Some(child_arc) = child_arc_opt {
                 loop {
                     std::thread::sleep(std::time::Duration::from_millis(50));
@@ -895,7 +1025,8 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             Ok("".to_string())
         }
         "kill_cli_instance" => {
-            let instance_id = args["instance_id"].as_str()
+            let instance_id = args["instance_id"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'instance_id'".to_string())?;
             kill_cli_instance(instance_id.to_string())?;
             Ok("null".to_string())
@@ -905,7 +1036,8 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "set_language" => {
-            let lang = args["lang"].as_str()
+            let lang = args["lang"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'lang'".to_string())?;
             set_language(lang.to_string())?;
             Ok("null".to_string())
@@ -915,15 +1047,18 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "set_theme" => {
-            let theme = args["theme"].as_str()
+            let theme = args["theme"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'theme'".to_string())?;
             set_theme(theme.to_string())?;
             Ok("null".to_string())
         }
         "update_category" => {
-            let cat_id = args["cat_id"].as_str()
+            let cat_id = args["cat_id"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'cat_id'".to_string())?;
-            let name = args["name"].as_str()
+            let name = args["name"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'name'".to_string())?;
             let desc = args["desc"].as_str().unwrap_or("");
             let res = update_category(cat_id.to_string(), name.to_string(), desc.to_string())?;
@@ -938,7 +1073,8 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "set_font_family" => {
-            let font = args["font"].as_str()
+            let font = args["font"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'font'".to_string())?;
             set_font_family(font.to_string())?;
             Ok("null".to_string())
@@ -948,7 +1084,8 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "set_font_size" => {
-            let size = args["size"].as_str()
+            let size = args["size"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'size'".to_string())?;
             set_font_size(size.to_string())?;
             Ok("null".to_string())
@@ -958,27 +1095,39 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "create_global_env_var" => {
-            let key = args["key"].as_str()
+            let key = args["key"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'key'".to_string())?;
-            let value = args["value"].as_str()
+            let value = args["value"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'value'".to_string())?;
             let description = args["description"].as_str().unwrap_or("");
-            let res = create_global_env_var(key.to_string(), value.to_string(), description.to_string())?;
+            let res =
+                create_global_env_var(key.to_string(), value.to_string(), description.to_string())?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "update_global_env_var" => {
-            let id = args["id"].as_str()
+            let id = args["id"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'id'".to_string())?;
-            let key = args["key"].as_str()
+            let key = args["key"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'key'".to_string())?;
-            let value = args["value"].as_str()
+            let value = args["value"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'value'".to_string())?;
             let description = args["description"].as_str().unwrap_or("");
-            let res = update_global_env_var(id.to_string(), key.to_string(), value.to_string(), description.to_string())?;
+            let res = update_global_env_var(
+                id.to_string(),
+                key.to_string(),
+                value.to_string(),
+                description.to_string(),
+            )?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "delete_global_env_var" => {
-            let id = args["id"].as_str()
+            let id = args["id"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'id'".to_string())?;
             delete_global_env_var(id.to_string())?;
             Ok("null".to_string())
@@ -988,75 +1137,109 @@ fn execute_test_command(cmd: &str, args_json: &str) -> Result<String, String> {
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "create_project" => {
-            let name = args["name"].as_str()
+            let name = args["name"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'name'".to_string())?;
-            let root_path = args["root_path"].as_str()
+            let root_path = args["root_path"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'root_path'".to_string())?;
             let res = create_project(name.to_string(), root_path.to_string())?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "delete_project" => {
-            let id = args["id"].as_str()
+            let id = args["id"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'id'".to_string())?;
             delete_project(id.to_string())?;
             Ok("null".to_string())
         }
         "get_project_agents" => {
-            let project_id = args["project_id"].as_str()
+            let project_id = args["project_id"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'project_id'".to_string())?;
             let res = get_project_agents(project_id.to_string())?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "spawn_project_agent" => {
-            let project_id = args["project_id"].as_str()
+            let project_id = args["project_id"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'project_id'".to_string())?;
-            let command = args["command"].as_str()
+            let command = args["command"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'command'".to_string())?;
-            let args_arr = args["args"].as_array()
+            let args_arr = args["args"]
+                .as_array()
                 .ok_or_else(|| "Missing or invalid argument 'args'".to_string())?;
             let mut cmd_args = Vec::new();
             for a in args_arr {
-                cmd_args.push(a.as_str().ok_or_else(|| "Arg must be a string".to_string())?.to_string());
+                cmd_args.push(
+                    a.as_str()
+                        .ok_or_else(|| "Arg must be a string".to_string())?
+                        .to_string(),
+                );
             }
             let env_mode = args["env_mode"].as_str().unwrap_or("inherit").to_string();
             let env_obj = args["custom_envs"].as_object();
             let mut custom_envs = HashMap::new();
             if let Some(obj) = env_obj {
                 for (k, v) in obj {
-                    let v_str = v.as_str().ok_or_else(|| "Env value must be a string".to_string())?;
+                    let v_str = v
+                        .as_str()
+                        .ok_or_else(|| "Env value must be a string".to_string())?;
                     custom_envs.insert(k.clone(), v_str.to_string());
                 }
             }
-            let pwd = args.get("pwd").and_then(|p| p.as_str()).map(|s| s.to_string());
-            let instance_id = core_spawn_project_agent(project_id.to_string(), command.to_string(), cmd_args, env_mode, custom_envs, pwd, None).map_err(|e| e.to_string())?;
+            let pwd = args
+                .get("pwd")
+                .and_then(|p| p.as_str())
+                .map(|s| s.to_string());
+            let instance_id = core_spawn_project_agent(
+                project_id.to_string(),
+                command.to_string(),
+                cmd_args,
+                env_mode,
+                custom_envs,
+                pwd,
+                None,
+            )
+            .map_err(|e| e.to_string())?;
             Ok(serde_json::json!(instance_id).to_string())
         }
         "kill_agent_process" => {
-            let instance_id = args["instance_id"].as_str()
+            let instance_id = args["instance_id"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'instance_id'".to_string())?;
             kill_agent_process(instance_id.to_string())?;
             Ok("null".to_string())
         }
         "bring_agent_to_foreground" => {
-            let instance_id = args["instance_id"].as_str()
+            let instance_id = args["instance_id"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'instance_id'".to_string())?;
             let res = bring_agent_to_foreground(instance_id.to_string())?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
         }
         "update_cli_args" => {
-            let cli_id = args["cli_id"].as_str()
+            let cli_id = args["cli_id"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'cli_id'".to_string())?;
-            let args_arr = args["args"].as_array()
+            let args_arr = args["args"]
+                .as_array()
                 .ok_or_else(|| "Missing or invalid argument 'args'".to_string())?;
             let mut cmd_args = Vec::new();
             for a in args_arr {
-                cmd_args.push(a.as_str().ok_or_else(|| "Arg must be a string".to_string())?.to_string());
+                cmd_args.push(
+                    a.as_str()
+                        .ok_or_else(|| "Arg must be a string".to_string())?
+                        .to_string(),
+                );
             }
             update_cli_args(cli_id.to_string(), cmd_args)?;
             Ok("null".to_string())
         }
         "get_agent_logs" => {
-            let instance_id = args["instance_id"].as_str()
+            let instance_id = args["instance_id"]
+                .as_str()
                 .ok_or_else(|| "Missing argument 'instance_id'".to_string())?;
             let res = get_agent_logs(instance_id.to_string())?;
             serde_json::to_string(&res).map_err(|e| e.to_string())
@@ -1085,11 +1268,31 @@ fn get_window_state_path() -> std::path::PathBuf {
 fn save_window_state(window: &tauri::Window) {
     if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
         #[derive(serde::Serialize)]
-        struct WinState { x: i32, y: i32, width: u32, height: u32 }
-        if let Ok(json) = serde_json::to_string_pretty(&WinState { x: pos.x, y: pos.y, width: size.width, height: size.height }) {
+        struct WinState {
+            x: i32,
+            y: i32,
+            width: u32,
+            height: u32,
+        }
+        if let Ok(json) = serde_json::to_string_pretty(&WinState {
+            x: pos.x,
+            y: pos.y,
+            width: size.width,
+            height: size.height,
+        }) {
             let _ = std::fs::write(get_window_state_path(), json);
         }
     }
+}
+
+#[tauri::command]
+fn get_skipped_version() -> Result<Option<String>, String> {
+    core_get_skipped_version().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_skipped_version(version: Option<String>) -> Result<(), String> {
+    core_set_skipped_version(version).map_err(|e| e.to_string())
 }
 
 fn main() {
@@ -1111,8 +1314,7 @@ fn main() {
         }
     }
 
-    let builder = tauri::Builder::default()
-        .manage(pty::PtyState::default());
+    let builder = tauri::Builder::default().manage(pty::PtyState::default());
 
     #[cfg(not(debug_assertions))]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -1123,20 +1325,31 @@ fn main() {
     }));
 
     builder
-        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--minimized"])))
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec!["--minimized"]),
+        ))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             if let Some(window) = app.get_webview_window("main") {
                 let state_path = get_window_state_path();
                 let has_state = state_path.exists()
-                    && std::fs::read_to_string(&state_path).ok()
+                    && std::fs::read_to_string(&state_path)
+                        .ok()
                         .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
                         .is_some();
                 if has_state {
                     let content = std::fs::read_to_string(&state_path).unwrap();
                     #[derive(serde::Deserialize)]
-                    struct WinState { x: i32, y: i32, width: u32, height: u32 }
+                    struct WinState {
+                        x: i32,
+                        y: i32,
+                        width: u32,
+                        height: u32,
+                    }
                     if let Ok(state) = serde_json::from_str::<WinState>(&content) {
-                        let _ = window.set_size(tauri::PhysicalSize::new(state.width, state.height));
+                        let _ =
+                            window.set_size(tauri::PhysicalSize::new(state.width, state.height));
                         let _ = window.set_position(tauri::PhysicalPosition::new(state.x, state.y));
                     }
                 } else {
@@ -1165,26 +1378,30 @@ fn main() {
             }
 
             let quit_item = MenuItemBuilder::with_id("quit", "Quit / 退出").build(app)?;
-            let show_item = MenuItemBuilder::with_id("show", "Show Loom / 显示主窗口").build(app)?;
-            let menu = MenuBuilder::new(app).items(&[&show_item, &quit_item]).build()?;
+            let show_item =
+                MenuItemBuilder::with_id("show", "Show Loom / 显示主窗口").build(app)?;
+            let menu = MenuBuilder::new(app)
+                .items(&[&show_item, &quit_item])
+                .build()?;
 
             let _tray = TrayIconBuilder::new()
-                .icon(Image::from_bytes(include_bytes!("../icons/tray.png")).expect("Failed to load tray icon"))
+                .icon(
+                    Image::from_bytes(include_bytes!("../icons/tray.png"))
+                        .expect("Failed to load tray icon"),
+                )
                 .menu(&menu)
                 .show_menu_on_left_click(false)
-                .on_menu_event(|app, event| {
-                    match event.id().as_ref() {
-                        "quit" => {
-                            std::process::exit(0);
-                        }
-                        "show" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
-                        _ => {}
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "quit" => {
+                        std::process::exit(0);
                     }
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click {
@@ -1204,18 +1421,16 @@ fn main() {
 
             Ok(())
         })
-        .on_window_event(|window, event| {
-            match event {
-                tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_) => {
-                    save_window_state(&window);
-                }
-                tauri::WindowEvent::CloseRequested { api, .. } => {
-                    save_window_state(&window);
-                    api.prevent_close();
-                    let _ = window.hide();
-                }
-                _ => {}
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_) => {
+                save_window_state(&window);
             }
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                save_window_state(&window);
+                api.prevent_close();
+                let _ = window.hide();
+            }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             update_ime_position,
@@ -1291,7 +1506,9 @@ fn main() {
             pty::pty_write,
             pty::pty_resize,
             pty::pty_history,
-            pty::pty_close
+            pty::pty_close,
+            get_skipped_version,
+            set_skipped_version
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

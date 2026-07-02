@@ -85,7 +85,7 @@ pub struct AgentInstance {
     pub project_id: String,
     pub command: String,
     pub arguments: Vec<String>,
-    pub status: String, // "running", "success", "failed", "interrupted"
+    pub status: String,   // "running", "success", "failed", "interrupted"
     pub env_mode: String, // "inherit" or "isolated"
     #[serde(default)]
     pub custom_envs: HashMap<String, String>,
@@ -142,6 +142,8 @@ pub struct LoomStorage {
     pub global_docs: Vec<GlobalDocTemplate>,
     #[serde(default)]
     pub autostart: bool,
+    #[serde(default)]
+    pub skipped_version: Option<String>,
 }
 
 impl Default for LoomStorage {
@@ -160,12 +162,12 @@ impl Default for LoomStorage {
             global_skills: Vec::new(),
             global_docs: Vec::new(),
             autostart: false,
+            skipped_version: None,
         }
     }
 }
 
 pub type AppConfig = LoomStorage;
-
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectSkill {
@@ -182,5 +184,3 @@ pub struct AgentDoc {
     pub absolute_path: PathBuf,
     pub file_name: String,
 }
-
-

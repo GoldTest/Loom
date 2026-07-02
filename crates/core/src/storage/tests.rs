@@ -1,6 +1,6 @@
-use super::manager::{load_config, save_config};
-use super::models::{AppConfig, CliTool, Category, Template};
 use super::error::StorageError;
+use super::manager::{load_config, save_config};
+use super::models::{AppConfig, Category, CliTool, Template};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -14,15 +14,15 @@ where
     F: FnOnce(&Path),
 {
     let _lock = TEST_MUTEX.lock().unwrap();
-    
+
     let temp_dir = tempfile::tempdir().expect("Failed to create temp directory");
     let temp_config_path = temp_dir.path().join("loom.json");
-    
+
     std::env::set_var("LOOM_CONFIG_PATH", &temp_config_path);
-    
+
     // Run the test
     f(&temp_config_path);
-    
+
     // Clean up
     std::env::remove_var("LOOM_CONFIG_PATH");
 }
@@ -83,7 +83,7 @@ fn test_serialization_fidelity() {
 
     // Serialize
     let serialized = serde_json::to_string_pretty(&original).expect("Failed to serialize");
-    
+
     // Deserialize
     let deserialized: AppConfig = serde_json::from_str(&serialized).expect("Failed to deserialize");
 
@@ -95,14 +95,15 @@ fn test_serialization_fidelity() {
 fn test_default_initialization() {
     run_test_with_temp_config(|config_path| {
         assert!(!config_path.exists());
-        
+
         let loaded = load_config().expect("failed to load config");
         assert_eq!(loaded, AppConfig::default());
-        
+
         assert!(config_path.exists());
         let file_content = fs::read_to_string(config_path).expect("failed to read written config");
-        let parsed: serde_json::Value = serde_json::from_str(&file_content).expect("written config is not valid JSON");
-        
+        let parsed: serde_json::Value =
+            serde_json::from_str(&file_content).expect("written config is not valid JSON");
+
         // Verify it has empty lists
         assert_eq!(parsed["cli_tools"], serde_json::json!([]));
         assert_eq!(parsed["categories"], serde_json::json!([]));
@@ -114,7 +115,7 @@ fn test_default_initialization() {
 fn test_atomic_save_load_roundtrip() {
     run_test_with_temp_config(|_config_path| {
         let mut config = load_config().expect("failed to load config");
-        
+
         // Modify configuration
         let new_tool = CliTool {
             id: Uuid::new_v4().to_string(),
@@ -126,9 +127,9 @@ fn test_atomic_save_load_roundtrip() {
             custom_args: Vec::new(),
         };
         config.cli_tools.push(new_tool);
-        
+
         save_config(&config).expect("failed to save config");
-        
+
         let loaded = load_config().expect("failed to reload config");
         assert_eq!(loaded, config);
     });
@@ -138,12 +139,15 @@ fn test_atomic_save_load_roundtrip() {
 fn test_malformed_json_error() {
     run_test_with_temp_config(|config_path| {
         fs::write(config_path, "invalid json { [").expect("failed to write malformed json");
-        
+
         let result = load_config();
         assert!(result.is_err());
         match result.unwrap_err() {
-            StorageError::SerializationError(_) => {}, // expected
-            other => panic!("expected StorageError::SerializationError error, got: {:?}", other),
+            StorageError::SerializationError(_) => {} // expected
+            other => panic!(
+                "expected StorageError::SerializationError error, got: {:?}",
+                other
+            ),
         }
     });
 }
@@ -163,24 +167,24 @@ fn test_crash_safety_on_failed_write() {
             custom_args: Vec::new(),
         });
         save_config(&original_config).expect("failed to save original config");
-        
+
         // 2. Create a directory where the temp file path is expected.
         // This will cause fs::File::create(temp_path) to fail because
         // a directory exists at that path.
         let temp_path = config_path.with_extension("tmp");
         fs::create_dir(&temp_path).expect("failed to create dummy temp dir");
-        
+
         // 3. Attempt to save a modified configuration
         let mut modified_config = original_config.clone();
         modified_config.cli_tools[0].name = "modified-tool".to_string();
-        
+
         let save_result = save_config(&modified_config);
         assert!(save_result.is_err());
-        
+
         // 4. Verify that the original config remains intact
         let loaded_config = load_config().expect("failed to load config");
         assert_eq!(loaded_config, original_config);
-        
+
         // Cleanup the directory so temp_dir deletion works cleanly
         let _ = fs::remove_dir(&temp_path);
     });
@@ -190,11 +194,11 @@ fn test_crash_safety_on_failed_write() {
 fn test_get_set_theme() {
     run_test_with_temp_config(|_config_path| {
         use super::manager::{get_theme, set_theme};
-        
+
         // Default theme should be "dark"
         let default_theme = get_theme().expect("Failed to get default theme");
         assert_eq!(default_theme, "dark");
-        
+
         // Set and get theme
         set_theme("day".to_string()).expect("Failed to set theme");
         let updated_theme = get_theme().expect("Failed to get updated theme");
@@ -203,28 +207,70 @@ fn test_get_set_theme() {
 }
 
 #[test]
+fn test_get_set_skipped_version() {
+    run_test_with_temp_config(|_config_path| {
+        use super::manager::{get_skipped_version, set_skipped_version};
+
+        // Default should be None
+        let default_version = get_skipped_version().expect("Failed to get default skipped version");
+        assert_eq!(default_version, None);
+
+        // Set a skipped version
+        set_skipped_version(Some("0.2.1".to_string()))
+            .expect("Failed to set skipped version");
+        let updated = get_skipped_version().expect("Failed to get updated skipped version");
+        assert_eq!(updated, Some("0.2.1".to_string()));
+
+        // Clear by setting None
+        set_skipped_version(None).expect("Failed to clear skipped version");
+        let cleared = get_skipped_version().expect("Failed to get cleared skipped version");
+        assert_eq!(cleared, None);
+    });
+}
+
+#[test]
+fn test_skipped_version_persistence() {
+    run_test_with_temp_config(|_config_path| {
+        use super::manager::{get_skipped_version, set_skipped_version};
+
+        // Set version
+        set_skipped_version(Some("1.0.0-rc.3".to_string()))
+            .expect("Failed to set skipped version");
+
+        // Read directly from config to verify persistence
+        let config = load_config().expect("Failed to load config");
+        assert_eq!(config.skipped_version, Some("1.0.0-rc.3".to_string()));
+
+        // Reload via getter (simulates fresh load)
+        let reloaded = get_skipped_version().expect("Failed to reload skipped version");
+        assert_eq!(reloaded, Some("1.0.0-rc.3".to_string()));
+    });
+}
+
+
+#[test]
 fn test_project_crud() {
     run_test_with_temp_config(|_config_path| {
-        use super::manager::{get_projects, create_project, delete_project, get_project_agents};
-        
+        use super::manager::{create_project, delete_project, get_project_agents, get_projects};
+
         let initial_projects = get_projects().expect("Failed to get initial projects");
         assert_eq!(initial_projects.len(), 0);
-        
+
         let current_dir = std::env::current_dir().expect("Failed to get current dir");
         let current_dir_str = current_dir.to_string_lossy().to_string();
-        
+
         let new_proj = create_project("Loom Test".to_string(), current_dir_str.clone())
             .expect("Failed to create project");
         assert_eq!(new_proj.name, "Loom Test");
         assert_eq!(new_proj.root_path, current_dir);
-        
+
         let projects_list = get_projects().expect("Failed to list projects");
         assert_eq!(projects_list.len(), 1);
         assert_eq!(projects_list[0].id, new_proj.id);
-        
+
         let agents = get_project_agents(new_proj.id.clone()).expect("Failed to get agents");
         assert_eq!(agents.len(), 0);
-        
+
         delete_project(new_proj.id.clone()).expect("Failed to delete project");
         let final_projects = get_projects().expect("Failed to list final projects");
         assert_eq!(final_projects.len(), 0);
@@ -234,30 +280,30 @@ fn test_project_crud() {
 #[test]
 fn test_project_reorder() {
     run_test_with_temp_config(|_config_path| {
-        use super::manager::{get_projects, create_project, reorder_projects};
-        
+        use super::manager::{create_project, get_projects, reorder_projects};
+
         let current_dir = std::env::current_dir().expect("Failed to get current dir");
         let current_dir_str = current_dir.to_string_lossy().to_string();
-        
+
         let p1 = create_project("Proj 1".to_string(), current_dir_str.clone()).unwrap();
         let p2 = create_project("Proj 2".to_string(), current_dir_str.clone()).unwrap();
         let p3 = create_project("Proj 3".to_string(), current_dir_str.clone()).unwrap();
-        
+
         let list = get_projects().unwrap();
         assert_eq!(list.len(), 3);
         assert_eq!(list[0].id, p1.id);
         assert_eq!(list[1].id, p2.id);
         assert_eq!(list[2].id, p3.id);
-        
+
         // Reorder to: p2, p3, p1
         reorder_projects(vec![p2.id.clone(), p3.id.clone(), p1.id.clone()]).unwrap();
-        
+
         let reordered_list = get_projects().unwrap();
         assert_eq!(reordered_list.len(), 3);
         assert_eq!(reordered_list[0].id, p2.id);
         assert_eq!(reordered_list[1].id, p3.id);
         assert_eq!(reordered_list[2].id, p1.id);
-        
+
         // Reorder with a subset, ensuring the omitted one (p3) is appended to the end
         reorder_projects(vec![p1.id.clone(), p2.id.clone()]).unwrap();
 
@@ -275,7 +321,11 @@ fn test_cli_tools_reorder() {
         use super::manager::{get_cli_tools, import_cli_tool, reorder_cli_tools};
 
         let temp_dir_path = config_path.parent().unwrap();
-        let ext = if cfg!(target_os = "windows") { ".exe" } else { "" };
+        let ext = if cfg!(target_os = "windows") {
+            ".exe"
+        } else {
+            ""
+        };
         let path1 = temp_dir_path.join(format!("tool1{}", ext));
         let path2 = temp_dir_path.join(format!("tool2{}", ext));
         let path3 = temp_dir_path.join(format!("tool3{}", ext));
@@ -323,4 +373,3 @@ fn test_cli_tools_reorder() {
         assert_eq!(final_list[2].id, t3.id);
     });
 }
-

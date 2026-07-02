@@ -1,11 +1,14 @@
-use crate::storage::error::{StorageError, Result};
-use crate::storage::models::{AppConfig, CliTool, Category, Template, LoomStorage, GlobalEnvVar, Project, AgentInstance, ProjectSkill, AgentDoc, GlobalSkillTemplate, GlobalDocTemplate};
+use crate::storage::error::{Result, StorageError};
+use crate::storage::models::{
+    AgentDoc, AgentInstance, AppConfig, Category, CliTool, GlobalDocTemplate, GlobalEnvVar,
+    GlobalSkillTemplate, LoomStorage, Project, ProjectSkill, Template,
+};
+use std::collections::HashMap;
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::env;
-use std::collections::HashMap;
+use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::process::{Command, Stdio, Child};
 use uuid::Uuid;
 
 pub static ACTIVE_INSTANCES: OnceLock<Mutex<HashMap<String, Arc<Mutex<Child>>>>> = OnceLock::new();
@@ -130,12 +133,16 @@ pub fn get_config_path() -> PathBuf {
     } else if let Some(proj_dirs) = directories::ProjectDirs::from(
         "com",
         "loom",
-        if cfg!(debug_assertions) { "LoomDev" } else { "Loom" }
+        if cfg!(debug_assertions) {
+            "LoomDev"
+        } else {
+            "Loom"
+        },
     ) {
         let config_dir = proj_dirs.config_dir();
         let _ = fs::create_dir_all(config_dir);
         let path = config_dir.join("loom.json");
-        
+
         #[cfg(debug_assertions)]
         {
             if !path.exists() {
@@ -165,11 +172,7 @@ pub fn get_instance_log_path(instance_id: &str) -> PathBuf {
 
 pub fn append_to_instance_log(instance_id: &str, line: &str) {
     let path = get_instance_log_path(instance_id);
-    if let Ok(mut file) = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-    {
+    if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(&path) {
         use std::io::Write;
         let _ = writeln!(file, "{}", line);
     }
@@ -271,7 +274,11 @@ pub fn spawn_in_new_terminal(
     for (key, val) in std::env::vars() {
         merged_envs.insert(key, val);
     }
-    if let Some(tool) = config.cli_tools.iter().find(|t| t.id == command || t.name == command) {
+    if let Some(tool) = config
+        .cli_tools
+        .iter()
+        .find(|t| t.id == command || t.name == command)
+    {
         for (k, v) in &tool.custom_env {
             merged_envs.insert(k.clone(), v.clone());
         }
@@ -338,19 +345,20 @@ pub fn spawn_in_new_terminal(
             shell_cmd.arg("-Command");
 
             let cd_cmd = if !working_dir.as_os_str().is_empty() {
-                format!("Set-Location '{}'; ", working_dir.to_string_lossy().replace("'", "''"))
+                format!(
+                    "Set-Location '{}'; ",
+                    working_dir.to_string_lossy().replace("'", "''")
+                )
             } else {
                 "".to_string()
             };
             let escaped_exe = executable_path.to_string_lossy().replace("'", "''");
-            let escaped_args: Vec<String> = processed_args.iter().map(|a| format!("'{}'", a.replace("'", "''"))).collect();
+            let escaped_args: Vec<String> = processed_args
+                .iter()
+                .map(|a| format!("'{}'", a.replace("'", "''")))
+                .collect();
 
-            let command_str = format!(
-                "{}& '{}' {}",
-                cd_cmd,
-                escaped_exe,
-                escaped_args.join(" ")
-            );
+            let command_str = format!("{}& '{}' {}", cd_cmd, escaped_exe, escaped_args.join(" "));
             shell_cmd.arg(&command_str);
             shell_cmd
         } else {
@@ -358,19 +366,20 @@ pub fn spawn_in_new_terminal(
             shell_cmd.arg("/c");
 
             let cd_cmd = if !working_dir.as_os_str().is_empty() {
-                format!("cd /d \"{}\" && ", working_dir.to_string_lossy().replace("\"", "\"\""))
+                format!(
+                    "cd /d \"{}\" && ",
+                    working_dir.to_string_lossy().replace("\"", "\"\"")
+                )
             } else {
                 "".to_string()
             };
             let escaped_exe = executable_path.to_string_lossy().replace("\"", "\"\"");
-            let escaped_args: Vec<String> = processed_args.iter().map(|a| format!("\"{}\"", a.replace("\"", "\"\""))).collect();
+            let escaped_args: Vec<String> = processed_args
+                .iter()
+                .map(|a| format!("\"{}\"", a.replace("\"", "\"\"")))
+                .collect();
 
-            let command_str = format!(
-                "{}\"{}\" {}",
-                cd_cmd,
-                escaped_exe,
-                escaped_args.join(" ")
-            );
+            let command_str = format!("{}\"{}\" {}", cd_cmd, escaped_exe, escaped_args.join(" "));
             shell_cmd.arg(&command_str);
             shell_cmd
         };
@@ -383,9 +392,20 @@ pub fn spawn_in_new_terminal(
         if env_mode == "isolated" {
             cmd.env_clear();
             let preserves = [
-                "SystemRoot", "SystemDrive", "PATHEXT", "TEMP", "TMP", 
-                "COMSPEC", "USERNAME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", 
-                "PROGRAMFILES", "PROGRAMFILES(X86)", "COMMONPROGRAMFILES", "PATH"
+                "SystemRoot",
+                "SystemDrive",
+                "PATHEXT",
+                "TEMP",
+                "TMP",
+                "COMSPEC",
+                "USERNAME",
+                "USERPROFILE",
+                "APPDATA",
+                "LOCALAPPDATA",
+                "PROGRAMFILES",
+                "PROGRAMFILES(X86)",
+                "COMMONPROGRAMFILES",
+                "PATH",
             ];
             for var in &preserves {
                 if let Ok(val) = env::var(var) {
@@ -394,7 +414,11 @@ pub fn spawn_in_new_terminal(
             }
         }
 
-        if let Some(tool) = config.cli_tools.iter().find(|t| t.id == command || t.name == command) {
+        if let Some(tool) = config
+            .cli_tools
+            .iter()
+            .find(|t| t.id == command || t.name == command)
+        {
             for (k, v) in &tool.custom_env {
                 cmd.env(k, v);
             }
@@ -432,7 +456,11 @@ pub fn spawn_in_new_terminal(
             }
         }
 
-        if let Some(tool) = config.cli_tools.iter().find(|t| t.id == command || t.name == command) {
+        if let Some(tool) = config
+            .cli_tools
+            .iter()
+            .find(|t| t.id == command || t.name == command)
+        {
             for (k, v) in &tool.custom_env {
                 cmd.env(k, v);
             }
@@ -469,15 +497,21 @@ impl StorageManager {
         } else if let Some(proj_dirs) = directories::ProjectDirs::from(
             "com",
             "loom",
-            if cfg!(debug_assertions) { "LoomDev" } else { "Loom" }
+            if cfg!(debug_assertions) {
+                "LoomDev"
+            } else {
+                "Loom"
+            },
         ) {
             let p = proj_dirs.data_local_dir().join("loom.json");
             let _ = fs::create_dir_all(proj_dirs.data_local_dir());
-            
+
             #[cfg(debug_assertions)]
             {
                 if !p.exists() {
-                    if let Some(release_dirs) = directories::ProjectDirs::from("com", "loom", "Loom") {
+                    if let Some(release_dirs) =
+                        directories::ProjectDirs::from("com", "loom", "Loom")
+                    {
                         let release_p = release_dirs.data_local_dir().join("loom.json");
                         if release_p.exists() {
                             let _ = fs::copy(&release_p, &p);
@@ -560,10 +594,16 @@ pub fn get_categories() -> Result<Vec<Category>> {
 pub fn import_cli_tool(path: String) -> Result<CliTool> {
     let p = PathBuf::from(&path);
     if !p.exists() {
-        return Err(StorageError::Validation(format!("File does not exist: {}", path)));
+        return Err(StorageError::Validation(format!(
+            "File does not exist: {}",
+            path
+        )));
     }
     if !p.is_file() {
-        return Err(StorageError::Validation(format!("Path is not a file: {}", path)));
+        return Err(StorageError::Validation(format!(
+            "Path is not a file: {}",
+            path
+        )));
     }
 
     let is_exe = {
@@ -587,7 +627,10 @@ pub fn import_cli_tool(path: String) -> Result<CliTool> {
         }
     };
     if !is_exe {
-        return Err(StorageError::Validation(format!("File is not executable: {}", path)));
+        return Err(StorageError::Validation(format!(
+            "File is not executable: {}",
+            path
+        )));
     }
 
     let mut config = load_config()?;
@@ -596,7 +639,11 @@ pub fn import_cli_tool(path: String) -> Result<CliTool> {
         return Ok(existing.clone());
     }
 
-    let name = p.file_stem().unwrap_or_default().to_string_lossy().to_string();
+    let name = p
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
     let new_tool = CliTool {
         id: uuid::Uuid::new_v4().to_string(),
         name,
@@ -667,7 +714,12 @@ pub fn scan_path_env() -> Result<Vec<CliTool>> {
                     if seen_names.insert(name_str.clone()) {
                         let exists = config.cli_tools.iter().any(|t| t.path == path);
                         let tool = if exists {
-                            config.cli_tools.iter().find(|t| t.path == path).unwrap().clone()
+                            config
+                                .cli_tools
+                                .iter()
+                                .find(|t| t.path == path)
+                                .unwrap()
+                                .clone()
                         } else {
                             let new_tool = CliTool {
                                 id: uuid::Uuid::new_v4().to_string(),
@@ -695,7 +747,10 @@ pub fn scan_path_env() -> Result<Vec<CliTool>> {
 pub fn scan_directory(path: String) -> Result<Vec<CliTool>> {
     let root = PathBuf::from(&path);
     if !root.exists() {
-        return Err(StorageError::Validation(format!("Directory does not exist: {}", path)));
+        return Err(StorageError::Validation(format!(
+            "Directory does not exist: {}",
+            path
+        )));
     }
 
     let mut config = load_config()?;
@@ -762,7 +817,12 @@ pub fn scan_directory(path: String) -> Result<Vec<CliTool>> {
                         let name_str = name.to_string_lossy().to_string();
                         let exists = config.cli_tools.iter().any(|t| t.path == entry_path);
                         let tool = if exists {
-                            config.cli_tools.iter().find(|t| t.path == entry_path).unwrap().clone()
+                            config
+                                .cli_tools
+                                .iter()
+                                .find(|t| t.path == entry_path)
+                                .unwrap()
+                                .clone()
                         } else {
                             let new_tool = CliTool {
                                 id: uuid::Uuid::new_v4().to_string(),
@@ -792,15 +852,22 @@ pub fn scan_directory(path: String) -> Result<Vec<CliTool>> {
 
 pub fn create_category(name: String, desc: String) -> Result<Category> {
     if name.is_empty() {
-        return Err(StorageError::Validation("Category name cannot be empty".to_string()));
+        return Err(StorageError::Validation(
+            "Category name cannot be empty".to_string(),
+        ));
     }
     if name.len() > 255 {
-        return Err(StorageError::Validation("Category name is too long".to_string()));
+        return Err(StorageError::Validation(
+            "Category name is too long".to_string(),
+        ));
     }
 
     let mut config = load_config()?;
     if config.categories.iter().any(|c| c.name == name) {
-        return Err(StorageError::Validation(format!("Category with name {} already exists", name)));
+        return Err(StorageError::Validation(format!(
+            "Category with name {} already exists",
+            name
+        )));
     }
 
     let new_cat = Category {
@@ -816,7 +883,10 @@ pub fn create_category(name: String, desc: String) -> Result<Category> {
 
 pub fn assign_cli_category(cli_id: String, cat_id: Option<String>) -> Result<()> {
     let mut config = load_config()?;
-    let tool_index = config.cli_tools.iter().position(|t| t.id == cli_id)
+    let tool_index = config
+        .cli_tools
+        .iter()
+        .position(|t| t.id == cli_id)
         .ok_or_else(|| StorageError::CliToolNotFound(cli_id.clone()))?;
 
     if let Some(ref cid) = cat_id {
@@ -832,15 +902,23 @@ pub fn assign_cli_category(cli_id: String, cat_id: Option<String>) -> Result<()>
 
 pub fn update_cli_env(cli_id: String, env: HashMap<String, String>) -> Result<()> {
     let mut config = load_config()?;
-    let tool_index = config.cli_tools.iter().position(|t| t.id == cli_id)
+    let tool_index = config
+        .cli_tools
+        .iter()
+        .position(|t| t.id == cli_id)
         .ok_or_else(|| StorageError::CliToolNotFound(cli_id.clone()))?;
 
     for (k, _v) in &env {
         if k.is_empty() {
-            return Err(StorageError::Validation("Environment variable key cannot be empty".to_string()));
+            return Err(StorageError::Validation(
+                "Environment variable key cannot be empty".to_string(),
+            ));
         }
         if k.contains('=') || k.chars().any(|c| c.is_whitespace()) {
-            return Err(StorageError::Validation(format!("Invalid character in environment key: {}", k)));
+            return Err(StorageError::Validation(format!(
+                "Invalid character in environment key: {}",
+                k
+            )));
         }
     }
 
@@ -851,7 +929,10 @@ pub fn update_cli_env(cli_id: String, env: HashMap<String, String>) -> Result<()
 
 pub fn update_cli_args(cli_id: String, args: Vec<String>) -> Result<()> {
     let mut config = load_config()?;
-    let tool_index = config.cli_tools.iter().position(|t| t.id == cli_id)
+    let tool_index = config
+        .cli_tools
+        .iter()
+        .position(|t| t.id == cli_id)
         .ok_or_else(|| StorageError::CliToolNotFound(cli_id.clone()))?;
 
     config.cli_tools[tool_index].custom_args = args;
@@ -870,7 +951,9 @@ pub fn create_template(
     env_mode: Option<String>,
 ) -> Result<Template> {
     if name.is_empty() {
-        return Err(StorageError::Validation("Template name cannot be empty".to_string()));
+        return Err(StorageError::Validation(
+            "Template name cannot be empty".to_string(),
+        ));
     }
 
     let mut config = load_config()?;
@@ -878,17 +961,36 @@ pub fn create_template(
         return Err(StorageError::CliToolNotFound(cli_id));
     }
 
-    if config.templates.iter().any(|t| t.cli_id == cli_id && t.name == name) {
-        return Err(StorageError::Validation(format!("Template with name {} already exists for this CLI", name)));
+    if config
+        .templates
+        .iter()
+        .any(|t| t.cli_id == cli_id && t.name == name)
+    {
+        return Err(StorageError::Validation(format!(
+            "Template with name {} already exists for this CLI",
+            name
+        )));
     }
 
-    let normalized_override = cmd_override.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let normalized_override = cmd_override
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
     if let Some(ref override_name) = normalized_override {
-        if config.templates.iter().any(|t| t.cmd_override.as_ref() == Some(override_name)) {
-            return Err(StorageError::Validation(format!("Command override '{}' already exists", override_name)));
+        if config
+            .templates
+            .iter()
+            .any(|t| t.cmd_override.as_ref() == Some(override_name))
+        {
+            return Err(StorageError::Validation(format!(
+                "Command override '{}' already exists",
+                override_name
+            )));
         }
         if ["list", "search", "mock-run", "help", "version"].contains(&override_name.as_str()) {
-            return Err(StorageError::Validation(format!("Command override '{}' conflicts with built-in commands", override_name)));
+            return Err(StorageError::Validation(format!(
+                "Command override '{}' conflicts with built-in commands",
+                override_name
+            )));
         }
     }
 
@@ -897,7 +999,10 @@ pub fn create_template(
         if !p.as_os_str().is_empty() {
             let path = p.clone();
             if !path.exists() || !path.is_dir() {
-                return Err(StorageError::Validation(format!("Working directory does not exist: {:?}", p)));
+                return Err(StorageError::Validation(format!(
+                    "Working directory does not exist: {:?}",
+                    p
+                )));
             }
         }
     }
@@ -947,20 +1052,37 @@ pub fn update_template(
     env_mode: Option<String>,
 ) -> Result<Template> {
     let mut config = load_config()?;
-    let template_idx = config.templates.iter().position(|t| t.id == template_id)
+    let template_idx = config
+        .templates
+        .iter()
+        .position(|t| t.id == template_id)
         .ok_or_else(|| StorageError::TemplateNotFound(template_id.clone()))?;
 
     if name.is_empty() {
-        return Err(StorageError::Validation("Template name cannot be empty".to_string()));
+        return Err(StorageError::Validation(
+            "Template name cannot be empty".to_string(),
+        ));
     }
 
-    let normalized_override = cmd_override.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let normalized_override = cmd_override
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
     if let Some(ref override_name) = normalized_override {
-        if config.templates.iter().any(|t| t.id != template_id && t.cmd_override.as_ref() == Some(override_name)) {
-            return Err(StorageError::Validation(format!("Command override '{}' already exists", override_name)));
+        if config
+            .templates
+            .iter()
+            .any(|t| t.id != template_id && t.cmd_override.as_ref() == Some(override_name))
+        {
+            return Err(StorageError::Validation(format!(
+                "Command override '{}' already exists",
+                override_name
+            )));
         }
         if ["list", "search", "mock-run", "help", "version"].contains(&override_name.as_str()) {
-            return Err(StorageError::Validation(format!("Command override '{}' conflicts with built-in commands", override_name)));
+            return Err(StorageError::Validation(format!(
+                "Command override '{}' conflicts with built-in commands",
+                override_name
+            )));
         }
     }
 
@@ -969,7 +1091,10 @@ pub fn update_template(
         if !p.as_os_str().is_empty() {
             let path = p.clone();
             if !path.exists() || !path.is_dir() {
-                return Err(StorageError::Validation(format!("Working directory does not exist: {:?}", p)));
+                return Err(StorageError::Validation(format!(
+                    "Working directory does not exist: {:?}",
+                    p
+                )));
             }
         }
     }
@@ -1054,7 +1179,10 @@ fn parse_args(args: &[String]) -> Vec<ParsedArg> {
                 let subkey = val_str[..eq_idx].to_string();
                 let val = val_str[eq_idx + 1..].to_string();
                 parsed.push(ParsedArg {
-                    key: ArgKey::Config { switch: item.clone(), subkey },
+                    key: ArgKey::Config {
+                        switch: item.clone(),
+                        subkey,
+                    },
                     value: ArgValue::ConfigValue(val),
                     original_switch: None,
                 });
@@ -1062,7 +1190,7 @@ fn parse_args(args: &[String]) -> Vec<ParsedArg> {
                 continue;
             }
         }
-        
+
         if item.starts_with('-') && item.contains('=') {
             if let Some(eq_idx) = item.find('=') {
                 let key = item[..eq_idx].to_string();
@@ -1076,7 +1204,7 @@ fn parse_args(args: &[String]) -> Vec<ParsedArg> {
                 continue;
             }
         }
-        
+
         if item.starts_with('-') {
             if i + 1 < args.len() && !args[i + 1].starts_with('-') {
                 parsed.push(ParsedArg {
@@ -1180,17 +1308,25 @@ pub fn run_cli_template(
     on_event: Option<Arc<dyn Fn(String, serde_json::Value) + Send + Sync + 'static>>,
 ) -> Result<String> {
     let config = load_config()?;
-    let template = config.templates.iter()
+    let template = config
+        .templates
+        .iter()
         .find(|t| t.id == template_id)
-        .ok_or_else(|| StorageError::TemplateNotFound(template_id.clone()))?.clone();
+        .ok_or_else(|| StorageError::TemplateNotFound(template_id.clone()))?
+        .clone();
 
-    let tool = config.cli_tools.iter()
+    let tool = config
+        .cli_tools
+        .iter()
         .find(|t| t.id == template.cli_id)
         .ok_or_else(|| StorageError::CliToolNotFound(template.cli_id.to_string()))?;
 
     let tool_path = &tool.path;
     if !tool_path.exists() {
-        return Err(StorageError::Validation(format!("CLI tool path does not exist: {}", tool.path.display())));
+        return Err(StorageError::Validation(format!(
+            "CLI tool path does not exist: {}",
+            tool.path.display()
+        )));
     }
 
     let working_dir = if let Some(ref pwd) = template.pwd {
@@ -1209,7 +1345,10 @@ pub fn run_cli_template(
         custom_envs.insert(k.clone(), v.clone());
     }
 
-    let env_mode = template.env_mode.clone().unwrap_or_else(|| "inherit".to_string());
+    let env_mode = template
+        .env_mode
+        .clone()
+        .unwrap_or_else(|| "inherit".to_string());
 
     let final_args = merge_cli_args(&tool.custom_args, &template.args);
 
@@ -1231,7 +1370,11 @@ pub fn run_cli_template(
     if let Some(ref pwd) = template.pwd {
         append_to_instance_log(&instance_id, &format!("[SPAWN] Working Dir: {:?}", pwd));
     }
-    println!("[Template Spawn] Command: {} {:?}", tool.path.display(), template.args);
+    println!(
+        "[Template Spawn] Command: {} {:?}",
+        tool.path.display(),
+        template.args
+    );
 
     let mut list = get_active_instances_list();
     list.push(ActiveInstance {
@@ -1249,10 +1392,16 @@ pub fn run_cli_template(
     if let Some(ref cb) = on_event {
         cb("cli-status-event".to_string(), payload.clone());
     }
-    println!("EVENT: cli-status-event:{}", serde_json::to_string(&payload)?);
+    println!(
+        "EVENT: cli-status-event:{}",
+        serde_json::to_string(&payload)?
+    );
 
     let child_arc = Arc::new(Mutex::new(child));
-    get_active_instances().lock().unwrap().insert(instance_id.clone(), child_arc.clone());
+    get_active_instances()
+        .lock()
+        .unwrap()
+        .insert(instance_id.clone(), child_arc.clone());
 
     let instance_id_clone = instance_id.clone();
     let child_arc_stdout = child_arc.clone();
@@ -1275,7 +1424,10 @@ pub fn run_cli_template(
                     if let Some(ref cb) = on_event_stdout {
                         cb("cli-log-event".to_string(), log_payload.clone());
                     }
-                    println!("EVENT: cli-log-event:{}", serde_json::to_string(&log_payload).unwrap_or_default());
+                    println!(
+                        "EVENT: cli-log-event:{}",
+                        serde_json::to_string(&log_payload).unwrap_or_default()
+                    );
                     append_to_instance_log(&instance_id_clone, &format!("[STDOUT] {}", l));
                 }
             }
@@ -1303,7 +1455,10 @@ pub fn run_cli_template(
                     if let Some(ref cb) = on_event_stderr {
                         cb("cli-log-event".to_string(), log_payload.clone());
                     }
-                    println!("EVENT: cli-log-event:{}", serde_json::to_string(&log_payload).unwrap_or_default());
+                    println!(
+                        "EVENT: cli-log-event:{}",
+                        serde_json::to_string(&log_payload).unwrap_or_default()
+                    );
                     append_to_instance_log(&instance_id_clone_err, &format!("[STDERR] {}", l));
                 }
             }
@@ -1339,12 +1494,19 @@ pub fn run_cli_template(
 
         let exit_code = status_res.and_then(|s| s.code());
         let status_str = if let Some(code) = exit_code {
-            if code == 0 { "stopped" } else { "failed" }
+            if code == 0 {
+                "stopped"
+            } else {
+                "failed"
+            }
         } else {
             "stopped"
         };
 
-        append_to_instance_log(&instance_id_clone_mon, &format!("[EXIT] Status: {}, Exit Code: {:?}", status_str, exit_code));
+        append_to_instance_log(
+            &instance_id_clone_mon,
+            &format!("[EXIT] Status: {}, Exit Code: {:?}", status_str, exit_code),
+        );
 
         let status_payload = serde_json::json!({
             "instance_id": instance_id_clone_mon,
@@ -1354,16 +1516,26 @@ pub fn run_cli_template(
         if let Some(ref cb) = on_event_mon {
             cb("cli-status-event".to_string(), status_payload.clone());
         }
-        println!("EVENT: cli-status-event:{}", serde_json::to_string(&status_payload).unwrap_or_default());
+        println!(
+            "EVENT: cli-status-event:{}",
+            serde_json::to_string(&status_payload).unwrap_or_default()
+        );
 
-        get_active_instances().lock().unwrap().remove(&instance_id_clone_mon);
+        get_active_instances()
+            .lock()
+            .unwrap()
+            .remove(&instance_id_clone_mon);
 
         let mut list = get_active_instances_list();
         list.retain(|x| x.instance_id != instance_id_clone_mon);
         save_active_instances_list(&list);
 
         if let Ok(mut cfg) = load_config() {
-            if let Some(t) = cfg.templates.iter_mut().find(|temp| temp.id == template_id_clone) {
+            if let Some(t) = cfg
+                .templates
+                .iter_mut()
+                .find(|temp| temp.id == template_id_clone)
+            {
                 let now_str = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_secs().to_string())
@@ -1392,7 +1564,11 @@ pub fn kill_cli_instance(instance_id: String) -> Result<()> {
 
     let instance_id_clone = instance_id.clone();
     std::thread::spawn(move || {
-        let child_arc_opt = get_active_instances().lock().unwrap().get(&instance_id_clone).cloned();
+        let child_arc_opt = get_active_instances()
+            .lock()
+            .unwrap()
+            .get(&instance_id_clone)
+            .cloned();
         if let Some(child_arc) = child_arc_opt {
             let pid = {
                 if let Ok(guard) = child_arc.lock() {
@@ -1451,20 +1627,47 @@ pub fn set_autostart_enabled(enabled: bool) -> Result<()> {
     Ok(())
 }
 
+pub fn get_skipped_version() -> Result<Option<String>> {
+    let config = load_config()?;
+    Ok(config.skipped_version.clone())
+}
+
+pub fn set_skipped_version(version: Option<String>) -> Result<()> {
+    let mut config = load_config()?;
+    config.skipped_version = version;
+    save_config(&config)?;
+    Ok(())
+}
+
 pub fn update_category(cat_id: String, name: String, desc: String) -> Result<Category> {
     if name.is_empty() {
-        return Err(StorageError::Validation("Category name cannot be empty".to_string()));
+        return Err(StorageError::Validation(
+            "Category name cannot be empty".to_string(),
+        ));
     }
     if name.len() > 255 {
-        return Err(StorageError::Validation("Category name is too long".to_string()));
+        return Err(StorageError::Validation(
+            "Category name is too long".to_string(),
+        ));
     }
 
     let mut config = load_config()?;
-    let cat_idx = config.categories.iter().position(|c| c.id == cat_id)
+    let cat_idx = config
+        .categories
+        .iter()
+        .position(|c| c.id == cat_id)
         .ok_or_else(|| StorageError::CategoryNotFound(cat_id.clone()))?;
 
-    if config.categories.iter().enumerate().any(|(i, c)| i != cat_idx && c.name == name) {
-        return Err(StorageError::Validation(format!("Category with name {} already exists", name)));
+    if config
+        .categories
+        .iter()
+        .enumerate()
+        .any(|(i, c)| i != cat_idx && c.name == name)
+    {
+        return Err(StorageError::Validation(format!(
+            "Category with name {} already exists",
+            name
+        )));
     }
 
     config.categories[cat_idx].name = name;
@@ -1492,7 +1695,11 @@ pub fn smart_classify() -> Result<(usize, usize)> {
         config.categories.push(Category {
             id: new_id.clone(),
             name: sys_name.to_string(),
-            description: if lang == "zh" { "系统指令与工具".to_string() } else { "System commands and tools".to_string() },
+            description: if lang == "zh" {
+                "系统指令与工具".to_string()
+            } else {
+                "System commands and tools".to_string()
+            },
         });
         new_id
     };
@@ -1504,31 +1711,71 @@ pub fn smart_classify() -> Result<(usize, usize)> {
         config.categories.push(Category {
             id: new_id.clone(),
             name: dev_name.to_string(),
-            description: if lang == "zh" { "开发工具与编译器".to_string() } else { "Development tools and compilers".to_string() },
+            description: if lang == "zh" {
+                "开发工具与编译器".to_string()
+            } else {
+                "Development tools and compilers".to_string()
+            },
         });
         new_id
     };
 
     let sys_cmds = [
-        "cmd", "powershell", "pwsh", "ping", "ipconfig", "systeminfo", "netstat", "explorer",
-        "taskkill", "tasklist", "sc", "reg", "shutdown", "chkdsk", "attrib", "robocopy", "xcopy",
-        "nslookup", "tracert", "arp", "route", "net", "wmic", "sfc", "dism", "gpupdate", "gpresult",
-        "cipher", "compact", "format", "diskpart", "hostname", "whoami", "taskmgr", "control",
-        "mstsc", "regedit", "dxdiag", "cleanmgr"
+        "cmd",
+        "powershell",
+        "pwsh",
+        "ping",
+        "ipconfig",
+        "systeminfo",
+        "netstat",
+        "explorer",
+        "taskkill",
+        "tasklist",
+        "sc",
+        "reg",
+        "shutdown",
+        "chkdsk",
+        "attrib",
+        "robocopy",
+        "xcopy",
+        "nslookup",
+        "tracert",
+        "arp",
+        "route",
+        "net",
+        "wmic",
+        "sfc",
+        "dism",
+        "gpupdate",
+        "gpresult",
+        "cipher",
+        "compact",
+        "format",
+        "diskpart",
+        "hostname",
+        "whoami",
+        "taskmgr",
+        "control",
+        "mstsc",
+        "regedit",
+        "dxdiag",
+        "cleanmgr",
     ];
 
     let dev_cmds = [
         "java", "javac", "rustc", "cargo", "git", "npm", "node", "yarn", "pnpm", "python", "pip",
         "go", "gcc", "g++", "clang", "docker", "mvn", "gradle", "php", "ruby", "gem", "composer",
         "dotnet", "make", "cmake", "git-lfs", "gh", "code", "rustup", "bun", "deno", "subl", "vim",
-        "nano", "bash", "sh", "zsh", "ssh", "scp", "sftp", "curl", "wget"
+        "nano", "bash", "sh", "zsh", "ssh", "scp", "sftp", "curl", "wget",
     ];
 
     let mut sys_count = 0;
     let mut dev_count = 0;
 
     for tool in &mut config.cli_tools {
-        let tool_stem = tool.path.file_stem()
+        let tool_stem = tool
+            .path
+            .file_stem()
             .map(|s| s.to_string_lossy().to_lowercase())
             .unwrap_or_else(|| tool.name.to_lowercase());
 
@@ -1580,14 +1827,27 @@ pub fn get_global_env_vars() -> Result<Vec<GlobalEnvVar>> {
     Ok(config.env_vars.clone())
 }
 
-pub fn create_global_env_var(key: String, value: String, description: String) -> Result<GlobalEnvVar> {
+pub fn create_global_env_var(
+    key: String,
+    value: String,
+    description: String,
+) -> Result<GlobalEnvVar> {
     let mut config = load_config()?;
     let key_trimmed = key.trim().to_string();
     if key_trimmed.is_empty() {
-        return Err(StorageError::Validation("Environment variable key cannot be empty".to_string()));
+        return Err(StorageError::Validation(
+            "Environment variable key cannot be empty".to_string(),
+        ));
     }
-    if config.env_vars.iter().any(|ev| ev.key == key_trimmed && ev.value == value) {
-        return Err(StorageError::Validation(format!("Environment variable '{}' with value '{}' already exists", key_trimmed, value)));
+    if config
+        .env_vars
+        .iter()
+        .any(|ev| ev.key == key_trimmed && ev.value == value)
+    {
+        return Err(StorageError::Validation(format!(
+            "Environment variable '{}' with value '{}' already exists",
+            key_trimmed, value
+        )));
     }
     let new_var = GlobalEnvVar {
         id: uuid::Uuid::new_v4().to_string(),
@@ -1600,23 +1860,40 @@ pub fn create_global_env_var(key: String, value: String, description: String) ->
     Ok(new_var)
 }
 
-pub fn update_global_env_var(id: String, key: String, value: String, description: String) -> Result<GlobalEnvVar> {
+pub fn update_global_env_var(
+    id: String,
+    key: String,
+    value: String,
+    description: String,
+) -> Result<GlobalEnvVar> {
     let mut config = load_config()?;
     let key_trimmed = key.trim().to_string();
     if key_trimmed.is_empty() {
-        return Err(StorageError::Validation("Environment variable key cannot be empty".to_string()));
+        return Err(StorageError::Validation(
+            "Environment variable key cannot be empty".to_string(),
+        ));
     }
-    let idx = config.env_vars.iter().position(|ev| ev.id == id)
+    let idx = config
+        .env_vars
+        .iter()
+        .position(|ev| ev.id == id)
         .ok_or_else(|| StorageError::Validation(format!("Environment variable not found")))?;
-    
-    if config.env_vars.iter().any(|ev| ev.id != id && ev.key == key_trimmed) {
-        return Err(StorageError::Validation(format!("Environment variable '{}' already exists", key_trimmed)));
+
+    if config
+        .env_vars
+        .iter()
+        .any(|ev| ev.id != id && ev.key == key_trimmed)
+    {
+        return Err(StorageError::Validation(format!(
+            "Environment variable '{}' already exists",
+            key_trimmed
+        )));
     }
-    
+
     config.env_vars[idx].key = key_trimmed;
     config.env_vars[idx].value = value;
     config.env_vars[idx].description = description;
-    
+
     let updated = config.env_vars[idx].clone();
     save_config(&config)?;
     Ok(updated)
@@ -1627,14 +1904,16 @@ pub fn delete_global_env_var(id: String) -> Result<()> {
     let initial_len = config.env_vars.len();
     config.env_vars.retain(|ev| ev.id != id);
     if config.env_vars.len() == initial_len {
-        return Err(StorageError::Validation(format!("Environment variable not found")));
+        return Err(StorageError::Validation(format!(
+            "Environment variable not found"
+        )));
     }
-    
+
     // Also remove from any template referencing it
     for tpl in &mut config.templates {
         tpl.env_var_ids.retain(|x| x != &id);
     }
-    
+
     save_config(&config)?;
     Ok(())
 }
@@ -1647,11 +1926,16 @@ pub fn get_projects() -> Result<Vec<Project>> {
 pub fn create_project(name: String, root_path: String) -> Result<Project> {
     let name_trimmed = name.trim().to_string();
     if name_trimmed.is_empty() {
-        return Err(StorageError::Validation("Project name cannot be empty".to_string()));
+        return Err(StorageError::Validation(
+            "Project name cannot be empty".to_string(),
+        ));
     }
     let path = PathBuf::from(&root_path);
     if !path.exists() || !path.is_dir() {
-        return Err(StorageError::Validation(format!("Project root directory does not exist: {}", root_path)));
+        return Err(StorageError::Validation(format!(
+            "Project root directory does not exist: {}",
+            root_path
+        )));
     }
 
     let mut config = load_config()?;
@@ -1738,7 +2022,9 @@ pub fn reorder_cli_tools(ids: Vec<String>) -> Result<()> {
 
 pub fn get_project_agents(project_id: String) -> Result<Vec<AgentInstance>> {
     let config = load_config()?;
-    let filtered = config.agent_instances.iter()
+    let filtered = config
+        .agent_instances
+        .iter()
         .filter(|ai| ai.project_id == project_id)
         .cloned()
         .collect();
@@ -1755,11 +2041,19 @@ pub fn spawn_project_agent(
     on_event: Option<Arc<dyn Fn(String, serde_json::Value) + Send + Sync + 'static>>,
 ) -> Result<String> {
     let config = load_config()?;
-    let project = config.projects.iter()
+    let project = config
+        .projects
+        .iter()
         .find(|p| p.id == project_id)
-        .ok_or_else(|| StorageError::Validation(format!("Project with ID {} not found", project_id)))?;
+        .ok_or_else(|| {
+            StorageError::Validation(format!("Project with ID {} not found", project_id))
+        })?;
 
-    let executable_path = if let Some(tool) = config.cli_tools.iter().find(|t| t.id == command || t.name == command) {
+    let executable_path = if let Some(tool) = config
+        .cli_tools
+        .iter()
+        .find(|t| t.id == command || t.name == command)
+    {
         tool.path.clone()
     } else {
         PathBuf::from(&command)
@@ -1777,7 +2071,11 @@ pub fn spawn_project_agent(
     };
 
     let mut final_args = Vec::new();
-    if let Some(tool) = config.cli_tools.iter().find(|t| t.id == command || t.name == command) {
+    if let Some(tool) = config
+        .cli_tools
+        .iter()
+        .find(|t| t.id == command || t.name == command)
+    {
         final_args.extend(tool.custom_args.clone());
     }
     final_args.extend(args.clone());
@@ -1795,11 +2093,21 @@ pub fn spawn_project_agent(
     let pid = child.id();
 
     // Log startup command details
-    append_to_instance_log(&instance_id, &format!("[SPAWN] Command: {:?}", executable_path));
+    append_to_instance_log(
+        &instance_id,
+        &format!("[SPAWN] Command: {:?}", executable_path),
+    );
     append_to_instance_log(&instance_id, &format!("[SPAWN] Args: {:?}", args));
-    append_to_instance_log(&instance_id, &format!("[SPAWN] Working Dir: {:?}", working_dir));
+    append_to_instance_log(
+        &instance_id,
+        &format!("[SPAWN] Working Dir: {:?}", working_dir),
+    );
     append_to_instance_log(&instance_id, &format!("[SPAWN] Env Mode: {}", env_mode));
-    println!("[Agent Spawn] Command: {} {:?}", executable_path.display(), args);
+    println!(
+        "[Agent Spawn] Command: {} {:?}",
+        executable_path.display(),
+        args
+    );
     println!("[Agent Spawn] Working Dir: {:?}", working_dir);
     println!("[Agent Spawn] Env Mode: {}", env_mode);
 
@@ -1843,7 +2151,10 @@ pub fn spawn_project_agent(
     }
 
     let child_arc = Arc::new(Mutex::new(child));
-    get_active_instances().lock().unwrap().insert(instance_id.clone(), child_arc.clone());
+    get_active_instances()
+        .lock()
+        .unwrap()
+        .insert(instance_id.clone(), child_arc.clone());
 
     let instance_id_clone = instance_id.clone();
     let child_arc_stdout = child_arc.clone();
@@ -1929,13 +2240,23 @@ pub fn spawn_project_agent(
 
         let exit_code = status_res.and_then(|s| s.code());
         let status_str = if let Some(code) = exit_code {
-            if code == 0 { "success" } else { "failed" }
+            if code == 0 {
+                "success"
+            } else {
+                "failed"
+            }
         } else {
             "failed"
         };
 
-        println!("[Agent Exit] [{}]: Status: {}, Exit Code: {:?}", instance_id_clone_mon, status_str, exit_code);
-        append_to_instance_log(&instance_id_clone_mon, &format!("[EXIT] Status: {}, Exit Code: {:?}", status_str, exit_code));
+        println!(
+            "[Agent Exit] [{}]: Status: {}, Exit Code: {:?}",
+            instance_id_clone_mon, status_str, exit_code
+        );
+        append_to_instance_log(
+            &instance_id_clone_mon,
+            &format!("[EXIT] Status: {}, Exit Code: {:?}", status_str, exit_code),
+        );
 
         let status_payload = serde_json::json!({
             "instance_id": instance_id_clone_mon,
@@ -1946,14 +2267,21 @@ pub fn spawn_project_agent(
             cb("cli-status-event".to_string(), status_payload.clone());
         }
 
-        get_active_instances().lock().unwrap().remove(&instance_id_clone_mon);
+        get_active_instances()
+            .lock()
+            .unwrap()
+            .remove(&instance_id_clone_mon);
 
         let mut list = get_active_instances_list();
         list.retain(|x| x.instance_id != instance_id_clone_mon);
         save_active_instances_list(&list);
 
         if let Ok(mut cfg) = load_config() {
-            if let Some(inst) = cfg.agent_instances.iter_mut().find(|i| i.id == instance_id_clone_mon) {
+            if let Some(inst) = cfg
+                .agent_instances
+                .iter_mut()
+                .find(|i| i.id == instance_id_clone_mon)
+            {
                 if inst.status != "interrupted" {
                     inst.status = status_str.to_string();
                 }
@@ -2047,9 +2375,13 @@ struct LockFile {
 
 pub fn get_project_skills(project_id: String) -> Result<Vec<ProjectSkill>> {
     let config = load_config()?;
-    let project = config.projects.iter()
+    let project = config
+        .projects
+        .iter()
         .find(|p| p.id == project_id)
-        .ok_or_else(|| StorageError::Validation(format!("Project with ID {} not found", project_id)))?;
+        .ok_or_else(|| {
+            StorageError::Validation(format!("Project with ID {} not found", project_id))
+        })?;
 
     let lock_path = project.root_path.join("skills-lock.json");
     let mut skills_map = HashMap::new();
@@ -2058,13 +2390,16 @@ pub fn get_project_skills(project_id: String) -> Result<Vec<ProjectSkill>> {
         if let Ok(content) = fs::read_to_string(&lock_path) {
             if let Ok(lock_file) = serde_json::from_str::<LockFile>(&content) {
                 for (name, skill) in lock_file.skills {
-                    skills_map.insert(name.clone(), ProjectSkill {
-                        name,
-                        enabled: false,
-                        source: skill.source,
-                        skill_path: skill.skill_path,
-                        computed_hash: skill.computed_hash,
-                    });
+                    skills_map.insert(
+                        name.clone(),
+                        ProjectSkill {
+                            name,
+                            enabled: false,
+                            source: skill.source,
+                            skill_path: skill.skill_path,
+                            computed_hash: skill.computed_hash,
+                        },
+                    );
                 }
             }
         }
@@ -2088,13 +2423,16 @@ pub fn get_project_skills(project_id: String) -> Result<Vec<ProjectSkill>> {
                             existing.enabled = enabled;
                         } else if skill_md.exists() || skill_md_disabled.exists() {
                             // If it exists on disk but not in lock file, still show it
-                            skills_map.insert(name.clone(), ProjectSkill {
-                                name,
-                                enabled,
-                                source: "".to_string(),
-                                skill_path: "".to_string(),
-                                computed_hash: "".to_string(),
-                            });
+                            skills_map.insert(
+                                name.clone(),
+                                ProjectSkill {
+                                    name,
+                                    enabled,
+                                    source: "".to_string(),
+                                    skill_path: "".to_string(),
+                                    computed_hash: "".to_string(),
+                                },
+                            );
                         }
                     }
                 }
@@ -2109,13 +2447,24 @@ pub fn get_project_skills(project_id: String) -> Result<Vec<ProjectSkill>> {
 
 pub fn toggle_project_skill(project_id: String, skill_name: String, enabled: bool) -> Result<()> {
     let config = load_config()?;
-    let project = config.projects.iter()
+    let project = config
+        .projects
+        .iter()
         .find(|p| p.id == project_id)
-        .ok_or_else(|| StorageError::Validation(format!("Project with ID {} not found", project_id)))?;
+        .ok_or_else(|| {
+            StorageError::Validation(format!("Project with ID {} not found", project_id))
+        })?;
 
-    let skills_dir = project.root_path.join(".agents").join("skills").join(&skill_name);
+    let skills_dir = project
+        .root_path
+        .join(".agents")
+        .join("skills")
+        .join(&skill_name);
     if !skills_dir.exists() {
-        return Err(StorageError::Validation(format!("Skill '{}' directory does not exist mapping this project", skill_name)));
+        return Err(StorageError::Validation(format!(
+            "Skill '{}' directory does not exist mapping this project",
+            skill_name
+        )));
     }
 
     let skill_md = skills_dir.join("SKILL.md");
@@ -2126,8 +2475,11 @@ pub fn toggle_project_skill(project_id: String, skill_name: String, enabled: boo
             fs::rename(&skill_md_disabled, &skill_md)
                 .map_err(|e| StorageError::Validation(format!("Failed to enable skill: {}", e)))?;
         } else if !skill_md.exists() {
-            fs::write(&skill_md, format!("# {}\n\nSkill description goes here.", skill_name))
-                .map_err(|e| StorageError::Validation(format!("Failed to create SKILL.md: {}", e)))?;
+            fs::write(
+                &skill_md,
+                format!("# {}\n\nSkill description goes here.", skill_name),
+            )
+            .map_err(|e| StorageError::Validation(format!("Failed to create SKILL.md: {}", e)))?;
         }
     } else {
         if skill_md.exists() {
@@ -2141,9 +2493,13 @@ pub fn toggle_project_skill(project_id: String, skill_name: String, enabled: boo
 
 pub fn scan_project_agent_docs(project_id: String) -> Result<Vec<AgentDoc>> {
     let config = load_config()?;
-    let project = config.projects.iter()
+    let project = config
+        .projects
+        .iter()
         .find(|p| p.id == project_id)
-        .ok_or_else(|| StorageError::Validation(format!("Project with ID {} not found", project_id)))?;
+        .ok_or_else(|| {
+            StorageError::Validation(format!("Project with ID {} not found", project_id))
+        })?;
 
     let mut docs = Vec::new();
     let root = &project.root_path;
@@ -2155,7 +2511,12 @@ pub fn scan_project_agent_docs(project_id: String) -> Result<Vec<AgentDoc>> {
                 if path.is_dir() {
                     if let Some(name) = path.file_name() {
                         let name_str = name.to_string_lossy().to_lowercase();
-                        if name_str == "node_modules" || name_str == "target" || name_str == ".git" || name_str == ".tmp" || name_str == ".backup" {
+                        if name_str == "node_modules"
+                            || name_str == "target"
+                            || name_str == ".git"
+                            || name_str == ".tmp"
+                            || name_str == ".backup"
+                        {
                             continue;
                         }
                     }
@@ -2187,15 +2548,27 @@ pub fn scan_project_agent_docs(project_id: String) -> Result<Vec<AgentDoc>> {
     }
 
     walk_dir(root, root, &mut docs);
-    docs.sort_by(|a, b| a.relative_path.to_lowercase().cmp(&b.relative_path.to_lowercase()));
+    docs.sort_by(|a, b| {
+        a.relative_path
+            .to_lowercase()
+            .cmp(&b.relative_path.to_lowercase())
+    });
     Ok(docs)
 }
 
-pub fn create_project_agent_doc(project_id: String, relative_path: String, doc_type: String) -> Result<AgentDoc> {
+pub fn create_project_agent_doc(
+    project_id: String,
+    relative_path: String,
+    doc_type: String,
+) -> Result<AgentDoc> {
     let config = load_config()?;
-    let project = config.projects.iter()
+    let project = config
+        .projects
+        .iter()
         .find(|p| p.id == project_id)
-        .ok_or_else(|| StorageError::Validation(format!("Project with ID {} not found", project_id)))?;
+        .ok_or_else(|| {
+            StorageError::Validation(format!("Project with ID {} not found", project_id))
+        })?;
 
     // Strip manual relative indicators
     let mut clean_rel = relative_path.replace('\\', "/");
@@ -2208,15 +2581,20 @@ pub fn create_project_agent_doc(project_id: String, relative_path: String, doc_t
 
     let absolute_path = project.root_path.join(&clean_rel);
     if absolute_path.exists() {
-        return Err(StorageError::Validation(format!("Document at '{}' already exists", clean_rel)));
+        return Err(StorageError::Validation(format!(
+            "Document at '{}' already exists",
+            clean_rel
+        )));
     }
 
     if let Some(parent) = absolute_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| StorageError::Validation(format!("Failed to create directory structure: {}", e)))?;
+        fs::create_dir_all(parent).map_err(|e| {
+            StorageError::Validation(format!("Failed to create directory structure: {}", e))
+        })?;
     }
 
-    let file_name = absolute_path.file_name()
+    let file_name = absolute_path
+        .file_name()
         .ok_or_else(|| StorageError::Validation("Invalid file target path".to_string()))?
         .to_string_lossy()
         .to_string();
@@ -2259,16 +2637,30 @@ pub fn get_global_skills() -> Result<Vec<GlobalSkillTemplate>> {
     Ok(config.global_skills)
 }
 
-pub fn create_global_skill(name: String, description: String, content: String, files: HashMap<String, String>) -> Result<GlobalSkillTemplate> {
+pub fn create_global_skill(
+    name: String,
+    description: String,
+    content: String,
+    files: HashMap<String, String>,
+) -> Result<GlobalSkillTemplate> {
     let mut config = load_config()?;
 
     let trimmed_name = name.trim().to_string();
     if trimmed_name.is_empty() {
-        return Err(StorageError::Validation("Skill name cannot be empty".to_string()));
+        return Err(StorageError::Validation(
+            "Skill name cannot be empty".to_string(),
+        ));
     }
 
-    if config.global_skills.iter().any(|s| s.name.eq_ignore_ascii_case(&trimmed_name)) {
-        return Err(StorageError::Validation(format!("Global skill with name '{}' already exists", trimmed_name)));
+    if config
+        .global_skills
+        .iter()
+        .any(|s| s.name.eq_ignore_ascii_case(&trimmed_name))
+    {
+        return Err(StorageError::Validation(format!(
+            "Global skill with name '{}' already exists",
+            trimmed_name
+        )));
     }
 
     let template = GlobalSkillTemplate {
@@ -2284,19 +2676,40 @@ pub fn create_global_skill(name: String, description: String, content: String, f
     Ok(template)
 }
 
-pub fn update_global_skill(id: String, name: String, description: String, content: String, files: HashMap<String, String>) -> Result<GlobalSkillTemplate> {
+pub fn update_global_skill(
+    id: String,
+    name: String,
+    description: String,
+    content: String,
+    files: HashMap<String, String>,
+) -> Result<GlobalSkillTemplate> {
     let mut config = load_config()?;
 
     let trimmed_name = name.trim().to_string();
     if trimmed_name.is_empty() {
-        return Err(StorageError::Validation("Skill name cannot be empty".to_string()));
+        return Err(StorageError::Validation(
+            "Skill name cannot be empty".to_string(),
+        ));
     }
 
-    let idx = config.global_skills.iter().position(|s| s.id == id)
-        .ok_or_else(|| StorageError::Validation(format!("Global skill with ID {} not found", id)))?;
+    let idx = config
+        .global_skills
+        .iter()
+        .position(|s| s.id == id)
+        .ok_or_else(|| {
+            StorageError::Validation(format!("Global skill with ID {} not found", id))
+        })?;
 
-    if config.global_skills.iter().enumerate().any(|(i, s)| i != idx && s.name.eq_ignore_ascii_case(&trimmed_name)) {
-        return Err(StorageError::Validation(format!("Global skill with name '{}' already exists", trimmed_name)));
+    if config
+        .global_skills
+        .iter()
+        .enumerate()
+        .any(|(i, s)| i != idx && s.name.eq_ignore_ascii_case(&trimmed_name))
+    {
+        return Err(StorageError::Validation(format!(
+            "Global skill with name '{}' already exists",
+            trimmed_name
+        )));
     }
 
     let item = &mut config.global_skills[idx];
@@ -2316,7 +2729,10 @@ pub fn delete_global_skill(id: String) -> Result<()> {
     config.global_skills.retain(|s| s.id != id);
 
     if config.global_skills.len() == initial_len {
-        return Err(StorageError::Validation(format!("Global skill with ID {} not found", id)));
+        return Err(StorageError::Validation(format!(
+            "Global skill with ID {} not found",
+            id
+        )));
     }
 
     save_config(&config)?;
@@ -2328,16 +2744,29 @@ pub fn get_global_docs() -> Result<Vec<GlobalDocTemplate>> {
     Ok(config.global_docs)
 }
 
-pub fn create_global_doc(alias: String, default_filename: String, content: String) -> Result<GlobalDocTemplate> {
+pub fn create_global_doc(
+    alias: String,
+    default_filename: String,
+    content: String,
+) -> Result<GlobalDocTemplate> {
     let mut config = load_config()?;
 
     let trimmed_alias = alias.trim().to_string();
     if trimmed_alias.is_empty() {
-        return Err(StorageError::Validation("Document template alias cannot be empty".to_string()));
+        return Err(StorageError::Validation(
+            "Document template alias cannot be empty".to_string(),
+        ));
     }
 
-    if config.global_docs.iter().any(|d| d.alias.eq_ignore_ascii_case(&trimmed_alias)) {
-        return Err(StorageError::Validation(format!("Global doc template with alias '{}' already exists", trimmed_alias)));
+    if config
+        .global_docs
+        .iter()
+        .any(|d| d.alias.eq_ignore_ascii_case(&trimmed_alias))
+    {
+        return Err(StorageError::Validation(format!(
+            "Global doc template with alias '{}' already exists",
+            trimmed_alias
+        )));
     }
 
     let template = GlobalDocTemplate {
@@ -2352,19 +2781,39 @@ pub fn create_global_doc(alias: String, default_filename: String, content: Strin
     Ok(template)
 }
 
-pub fn update_global_doc(id: String, alias: String, default_filename: String, content: String) -> Result<GlobalDocTemplate> {
+pub fn update_global_doc(
+    id: String,
+    alias: String,
+    default_filename: String,
+    content: String,
+) -> Result<GlobalDocTemplate> {
     let mut config = load_config()?;
 
     let trimmed_alias = alias.trim().to_string();
     if trimmed_alias.is_empty() {
-        return Err(StorageError::Validation("Document template alias cannot be empty".to_string()));
+        return Err(StorageError::Validation(
+            "Document template alias cannot be empty".to_string(),
+        ));
     }
 
-    let idx = config.global_docs.iter().position(|d| d.id == id)
-        .ok_or_else(|| StorageError::Validation(format!("Global doc template with ID {} not found", id)))?;
+    let idx = config
+        .global_docs
+        .iter()
+        .position(|d| d.id == id)
+        .ok_or_else(|| {
+            StorageError::Validation(format!("Global doc template with ID {} not found", id))
+        })?;
 
-    if config.global_docs.iter().enumerate().any(|(i, d)| i != idx && d.alias.eq_ignore_ascii_case(&trimmed_alias)) {
-        return Err(StorageError::Validation(format!("Global doc template with alias '{}' already exists", trimmed_alias)));
+    if config
+        .global_docs
+        .iter()
+        .enumerate()
+        .any(|(i, d)| i != idx && d.alias.eq_ignore_ascii_case(&trimmed_alias))
+    {
+        return Err(StorageError::Validation(format!(
+            "Global doc template with alias '{}' already exists",
+            trimmed_alias
+        )));
     }
 
     let item = &mut config.global_docs[idx];
@@ -2383,7 +2832,10 @@ pub fn delete_global_doc(id: String) -> Result<()> {
     config.global_docs.retain(|d| d.id != id);
 
     if config.global_docs.len() == initial_len {
-        return Err(StorageError::Validation(format!("Global doc template with ID {} not found", id)));
+        return Err(StorageError::Validation(format!(
+            "Global doc template with ID {} not found",
+            id
+        )));
     }
 
     save_config(&config)?;
@@ -2393,17 +2845,33 @@ pub fn delete_global_doc(id: String) -> Result<()> {
 pub fn import_global_skill_to_project(project_id: String, skill_id: String) -> Result<()> {
     let config = load_config()?;
 
-    let project = config.projects.iter()
+    let project = config
+        .projects
+        .iter()
         .find(|p| p.id == project_id)
-        .ok_or_else(|| StorageError::Validation(format!("Project with ID {} not found", project_id)))?;
+        .ok_or_else(|| {
+            StorageError::Validation(format!("Project with ID {} not found", project_id))
+        })?;
 
-    let skill = config.global_skills.iter()
+    let skill = config
+        .global_skills
+        .iter()
         .find(|s| s.id == skill_id)
-        .ok_or_else(|| StorageError::Validation(format!("Global skill template with ID {} not found", skill_id)))?;
+        .ok_or_else(|| {
+            StorageError::Validation(format!(
+                "Global skill template with ID {} not found",
+                skill_id
+            ))
+        })?;
 
-    let skill_dir = project.root_path.join(".agents").join("skills").join(&skill.name);
-    fs::create_dir_all(&skill_dir)
-        .map_err(|e| StorageError::Validation(format!("Failed to create skill directory: {}", e)))?;
+    let skill_dir = project
+        .root_path
+        .join(".agents")
+        .join("skills")
+        .join(&skill.name);
+    fs::create_dir_all(&skill_dir).map_err(|e| {
+        StorageError::Validation(format!("Failed to create skill directory: {}", e))
+    })?;
 
     let skill_md = skill_dir.join("SKILL.md");
     fs::write(&skill_md, &skill.content)
@@ -2423,26 +2891,46 @@ pub fn import_global_skill_to_project(project_id: String, skill_id: String) -> R
         }
         let target_path = skill_dir.join(clean_rel_str);
         if let Some(parent) = target_path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|e| StorageError::Validation(format!("Failed to create directory structure for skill file: {}", e)))?;
+            fs::create_dir_all(parent).map_err(|e| {
+                StorageError::Validation(format!(
+                    "Failed to create directory structure for skill file: {}",
+                    e
+                ))
+            })?;
         }
-        fs::write(&target_path, file_content)
-            .map_err(|e| StorageError::Validation(format!("Failed to write skill file '{}': {}", clean_rel_str, e)))?;
+        fs::write(&target_path, file_content).map_err(|e| {
+            StorageError::Validation(format!(
+                "Failed to write skill file '{}': {}",
+                clean_rel_str, e
+            ))
+        })?;
     }
 
     Ok(())
 }
 
-pub fn import_global_doc_to_project(project_id: String, doc_id: String, relative_path: String) -> Result<AgentDoc> {
+pub fn import_global_doc_to_project(
+    project_id: String,
+    doc_id: String,
+    relative_path: String,
+) -> Result<AgentDoc> {
     let config = load_config()?;
 
-    let project = config.projects.iter()
+    let project = config
+        .projects
+        .iter()
         .find(|p| p.id == project_id)
-        .ok_or_else(|| StorageError::Validation(format!("Project with ID {} not found", project_id)))?;
+        .ok_or_else(|| {
+            StorageError::Validation(format!("Project with ID {} not found", project_id))
+        })?;
 
-    let doc = config.global_docs.iter()
+    let doc = config
+        .global_docs
+        .iter()
         .find(|d| d.id == doc_id)
-        .ok_or_else(|| StorageError::Validation(format!("Global doc template with ID {} not found", doc_id)))?;
+        .ok_or_else(|| {
+            StorageError::Validation(format!("Global doc template with ID {} not found", doc_id))
+        })?;
 
     let mut clean_rel = relative_path.replace('\\', "/");
     if clean_rel.starts_with("./") {
@@ -2455,11 +2943,13 @@ pub fn import_global_doc_to_project(project_id: String, doc_id: String, relative
     let absolute_path = project.root_path.join(&clean_rel);
 
     if let Some(parent) = absolute_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| StorageError::Validation(format!("Failed to create directory structure: {}", e)))?;
+        fs::create_dir_all(parent).map_err(|e| {
+            StorageError::Validation(format!("Failed to create directory structure: {}", e))
+        })?;
     }
 
-    let file_name = absolute_path.file_name()
+    let file_name = absolute_path
+        .file_name()
         .ok_or_else(|| StorageError::Validation("Invalid file target path".to_string()))?
         .to_string_lossy()
         .to_string();
@@ -2482,10 +2972,13 @@ pub fn import_global_doc_to_project(project_id: String, doc_id: String, relative
 
 pub fn parse_local_skill_dir(dir_path: &Path) -> Result<GlobalSkillTemplate> {
     if !dir_path.exists() || !dir_path.is_dir() {
-        return Err(StorageError::Validation("Selected path does not exist or is not a directory".to_string()));
+        return Err(StorageError::Validation(
+            "Selected path does not exist or is not a directory".to_string(),
+        ));
     }
 
-    let folder_name = dir_path.file_name()
+    let folder_name = dir_path
+        .file_name()
         .ok_or_else(|| StorageError::Validation("Invalid folder path".to_string()))?
         .to_string_lossy()
         .to_string();
@@ -2505,7 +2998,9 @@ pub fn parse_local_skill_dir(dir_path: &Path) -> Result<GlobalSkillTemplate> {
     }
 
     let skill_md_path = skill_md_path.ok_or_else(|| {
-        StorageError::Validation("The directory must contain a 'SKILL.md' or 'Skill.md' file".to_string())
+        StorageError::Validation(
+            "The directory must contain a 'SKILL.md' or 'Skill.md' file".to_string(),
+        )
     })?;
 
     let content = fs::read_to_string(&skill_md_path)
@@ -2515,7 +3010,12 @@ pub fn parse_local_skill_dir(dir_path: &Path) -> Result<GlobalSkillTemplate> {
     let mut files = HashMap::new();
     let skill_md_name_str = skill_md_name.unwrap_or_else(|| "SKILL.md".to_string());
 
-    fn visit_dirs(dir: &Path, base_dir: &Path, skill_md_name: &str, files: &mut HashMap<String, String>) -> Result<()> {
+    fn visit_dirs(
+        dir: &Path,
+        base_dir: &Path,
+        skill_md_name: &str,
+        files: &mut HashMap<String, String>,
+    ) -> Result<()> {
         if dir.is_dir() {
             for entry in fs::read_dir(dir).map_err(|e| StorageError::Validation(e.to_string()))? {
                 let entry = entry.map_err(|e| StorageError::Validation(e.to_string()))?;
@@ -2524,10 +3024,13 @@ pub fn parse_local_skill_dir(dir_path: &Path) -> Result<GlobalSkillTemplate> {
                     visit_dirs(&path, base_dir, skill_md_name, files)?;
                 } else {
                     let file_name = path.file_name().unwrap_or_default().to_string_lossy();
-                    if file_name.eq_ignore_ascii_case(skill_md_name) && path.parent() == Some(base_dir) {
+                    if file_name.eq_ignore_ascii_case(skill_md_name)
+                        && path.parent() == Some(base_dir)
+                    {
                         continue;
                     }
-                    let rel_path = path.strip_prefix(base_dir)
+                    let rel_path = path
+                        .strip_prefix(base_dir)
                         .map_err(|e| StorageError::Validation(e.to_string()))?
                         .to_string_lossy()
                         .replace('\\', "/");
@@ -2551,6 +3054,3 @@ pub fn parse_local_skill_dir(dir_path: &Path) -> Result<GlobalSkillTemplate> {
         files,
     })
 }
-
-
-

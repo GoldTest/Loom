@@ -21,6 +21,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -28,5 +29,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzlK/GccR/RnjyfK15LAJgQZvPUamAuyj6C9hw1U1HBPc/6nFy2ZSolqWsWwGw2S8NxXlU52wblKNG3TZS6bfYhPPyF3atGXbIwd5OsIYtMzERheNq+yuBFaaUIeYv16fhXuEGH/cXLUs5Em2zt0B09ZFZvyuxnzy4/rEVz+K1nTwxpY28p9ZSzn2EgbpjlC6gSjRehurTD8Ru9iMVrSntor/LYU2BRp+cwdGso3PR39Pch/nDL51+jZpFUKW32FPuiQoMMhdjwA17yoj3+EnNOTQtu5kYPsk0yrxGG8ovQCrad5ct6U6Cus8o5xh3F9bB5pgUxyQjuKlKrVg505WIwIDAQAB",
+      "endpoints": [
+        "https://github.com/GoldTest/Loom/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

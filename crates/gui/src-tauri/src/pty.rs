@@ -1,7 +1,7 @@
-use portable_pty::{native_pty_system, PtySize, CommandBuilder};
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Mutex, OnceLock};
 use std::io::{Read, Write};
+use std::sync::{Arc, Mutex, OnceLock};
 use tauri::{AppHandle, Emitter};
 
 // Job Object Helper for Process Tree Cleanup on Windows
@@ -15,12 +15,12 @@ unsafe impl Sync for JobObject {}
 impl JobObject {
     pub fn new() -> std::io::Result<Self> {
         unsafe {
+            use std::ptr;
             use winapi::um::jobapi2::{CreateJobObjectW, SetInformationJobObject};
             use winapi::um::winnt::{
                 JobObjectExtendedLimitInformation, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
                 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
             };
-            use std::ptr;
 
             let handle = CreateJobObjectW(ptr::null_mut(), ptr::null());
             if handle.is_null() {
@@ -171,7 +171,12 @@ pub fn build_shell_args(
                 .iter()
                 .map(|a| format!("'{}'", a.replace("'", "'\\''")))
                 .collect();
-            let command_str = format!("'{}' {}; exec {}", escaped_exe, escaped_args.join(" "), shell_path);
+            let command_str = format!(
+                "'{}' {}; exec {}",
+                escaped_exe,
+                escaped_args.join(" "),
+                shell_path
+            );
             args.push("-c".to_string());
             args.push(command_str);
         }
@@ -315,7 +320,8 @@ pub fn spawn_pty_session(
             };
 
             let find_powershell = || -> Option<String> {
-                let system32_powershell = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+                let system32_powershell =
+                    "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
                 if std::path::Path::new(system32_powershell).exists() {
                     return Some(system32_powershell.to_string());
                 }
@@ -376,7 +382,10 @@ pub fn spawn_pty_session(
 
     // Resolve parameter arguments inside the interactive shell
     let expanded_args = args.as_ref().map(|raw_args| {
-        raw_args.iter().map(|arg| expand_env_vars(arg, &merged_envs)).collect::<Vec<String>>()
+        raw_args
+            .iter()
+            .map(|arg| expand_env_vars(arg, &merged_envs))
+            .collect::<Vec<String>>()
     });
 
     let shell_args = build_shell_args(&shell_exe, command.as_deref(), expanded_args.as_deref());
@@ -419,7 +428,11 @@ pub fn spawn_pty_session(
         is_running: is_running.clone(),
     });
 
-    state.sessions.lock().unwrap().insert(session_id.clone(), session);
+    state
+        .sessions
+        .lock()
+        .unwrap()
+        .insert(session_id.clone(), session);
 
     // Read loop thread
     let session_id_clone = session_id.clone();
@@ -480,7 +493,9 @@ pub fn pty_write(
     writer
         .write_all(&data)
         .map_err(|e| format!("Failed to write: {}", e))?;
-    writer.flush().map_err(|e| format!("Failed to flush: {}", e))?;
+    writer
+        .flush()
+        .map_err(|e| format!("Failed to flush: {}", e))?;
     Ok(())
 }
 
@@ -531,10 +546,7 @@ pub fn pty_history(
 }
 
 #[tauri::command]
-pub fn pty_close(
-    state: tauri::State<'_, PtyState>,
-    session_id: String,
-) -> Result<(), String> {
+pub fn pty_close(state: tauri::State<'_, PtyState>, session_id: String) -> Result<(), String> {
     let session = state.sessions.lock().unwrap().remove(&session_id);
     if let Some(s) = session {
         *s.is_running.lock().unwrap() = false;
