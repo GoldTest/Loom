@@ -34,7 +34,7 @@ jobs:
         uses: swatinem/rust-cache@v2
 
       - name: Build CLI binary
-        run: cargo build --release --package loom
+        run: cargo build --release --package loom-cli
 
       - name: Bundle Tauri GUI App (NSIS Installer)
         run: npx @tauri-apps/cli build
