@@ -32,7 +32,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArfNOVch33BzMVaTzfkwkplCW4nWPXQp+qQCdVVhZbW8Gx61aYUeDygJRcruCV5ixHEsFHk3s/Sqvb16g1Tz828bp+67zx6JlvbahPM1gTBQawKcJGck+gFDJOCrEJls2/nSZy00kAhPlliuMhYxTe/RlEiGPaBRBRVgyehgjcRS+ABeMIWW/32zo08obsYa++TgdU6GwvxxL19/qj9fuJzTX/O80M8BfbSudhU3HiWVdb9C2rRCwRpA65N2tDl3vhYvpycQQ4TdKlZhfwK5e+WknN3c2u1zrLoyOiyI1MCVGvYgM9Zwbdx1c+P+tpr01qq7rSIKrsUo0hD1EvctojwIDAQAB",
+      "pubkey": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxztfZpb3H8SErgMXtBpKjilrb3EPtcuZP9lSMOFft6jw3zTRIam/JMzofoZzW5FRhLziO76SwcoVV3wpWO/ROkk9W+3uBEnAXd+Cj6Izz3se8NKwx6wgzU3m1EY0Bdg/aLknZbFKby920ymTe4v/HIOzLE1gc8161fcQfcLIekUZDFZ5LGM1r+1icbmsn4Lb6VPTCV10s0J9lDzsdJrQMWRO9QFKPShEQuRXMbdx+9Iaq3weN5wm6QieeWyyDUfsNq81nrJsqCR+S9cKhgdRyXBHZABTnE0fqHT0pXA4xO9yqsUJm+8ELWWl1EluzoPEjgGE8xS9pgL3R0vukNa79wIDAQAB",
       "endpoints": [
         "https://github.com/GoldTest/Loom/releases/latest/download/latest.json"
       ],
