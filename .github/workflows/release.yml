@@ -46,7 +46,7 @@ jobs:
       - name: Create Portable ZIP Package
         shell: pwsh
         run: |
-          # Create staging folder structure to avoid Windows case-insensitive naming conflicts
+          $version = "${{ github.ref_name }}".Substring(1)  # strip leading 'v'
           New-Item -ItemType Directory -Force -Path target/release/portable
           New-Item -ItemType Directory -Force -Path target/release/portable/cli
           
@@ -59,15 +59,15 @@ jobs:
           # Copy README
           Copy-Item -Path README.md -Destination target/release/portable/README.md
           
-          # Compress staging directory contents
-          Compress-Archive -Path target/release/portable/* -DestinationPath target/release/Loom-portable-x64.zip
+          # Compress with versioned filename
+          Compress-Archive -Path target/release/portable/* -DestinationPath "target/release/Loom-${version}-portable-x64.zip"
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         with:
           files: |
             target/release/bundle/nsis/*.exe
-            target/release/Loom-portable-x64.zip
+            target/release/Loom-*-portable-x64.zip
           draft: false
           prerelease: false
         env:
